@@ -24,6 +24,7 @@ export interface RunOptions {
   readonly init?: string | undefined
   readonly step?: string | undefined
   readonly main?: string | undefined
+  readonly backend?: "typescript" | "rust" | undefined
 }
 
 const DEFAULT_N_TRACES = 100
@@ -38,7 +39,7 @@ const buildRunArgs = (
     opts.spec,
     "--mbt",
     "--backend",
-    "typescript",
+    opts.backend ?? "typescript",
     "--n-traces",
     String(nTraces),
     "--out-itf",
