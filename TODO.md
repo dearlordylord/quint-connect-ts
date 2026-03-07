@@ -29,7 +29,7 @@
   driver.on("Transfer", TransferPicks, async (picks) => { ... })
   ```
 - [ ] Vitest integration — optional helper generating `test()` calls from traces
-- [ ] Trace persistence — `--trace-dir` option to keep ITF files for debugging
+- [x] Trace persistence — `--trace-dir` option to keep ITF files for debugging
 - [ ] Invariant checking — pass `--invariants` to quint run
 - [ ] Witness reporting — pass `--witnesses` to quint run
 - [ ] CI example — GitHub Actions workflow for MBT
