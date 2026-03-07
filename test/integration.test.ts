@@ -63,4 +63,29 @@ describe("Integration: counter spec", () => {
       Effect.provide(NodeContext.layer),
       Effect.scoped
     ), { timeout: 30000 })
+
+  it.effect("replays traces concurrently with concurrency > 1", () =>
+    Effect.gen(function*() {
+      const result = yield* quintRun({
+        spec: path.join(specDir, "counter.qnt"),
+        nTraces: 3,
+        maxSamples: 3,
+        maxSteps: 5,
+        seed: "1",
+        concurrency: 3,
+        driverFactory: {
+          create: () => Effect.succeed(createCounterDriver())
+        },
+        stateCheck: {
+          compareState: (spec: CounterState, impl: CounterState) => spec.count === impl.count,
+          deserializeState: (raw) => Schema.decodeUnknown(CounterStateSchema)(raw).pipe(Effect.orDie)
+        }
+      })
+
+      expect(result.tracesReplayed).toBeGreaterThan(0)
+      expect(result.seed).toBe("1")
+    }).pipe(
+      Effect.provide(NodeContext.layer),
+      Effect.scoped
+    ), { timeout: 30000 })
 })

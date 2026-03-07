@@ -1,7 +1,7 @@
 import type * as CommandExecutor from "@effect/platform/CommandExecutor"
 import type * as FileSystem from "@effect/platform/FileSystem"
 import type * as Path from "@effect/platform/Path"
-import { Effect, Predicate, Schema } from "effect"
+import { Array as Arr, Effect, Predicate, Schema } from "effect"
 import type { QuintError, QuintNotFoundError, RunOptions } from "../cli/quint.js"
 import { generateTraces } from "../cli/quint.js"
 import type { Config, Driver, DriverFactory, StateComparator } from "../driver/types.js"
@@ -160,6 +160,7 @@ export interface StateCheck<S> {
 export type QuintRunOptions<S, E, R> = RunOptions & {
   readonly driverFactory: DriverFactory<S, E, R>
   readonly stateCheck?: StateCheck<S> | undefined
+  readonly concurrency?: number | undefined
 }
 
 const resolveSeed = (opts: RunOptions): string =>
@@ -181,20 +182,23 @@ export const quintRun = <S, E, R>(
       })
     }
 
-    let tracesReplayed = 0
-    for (const [traceIndex, trace] of traces.entries()) {
-      const driver = yield* opts.driverFactory.create()
-      const config = driver.config?.() ?? defaultConfig
-      yield* replayTrace(
-        trace,
-        traceIndex,
-        driver,
-        config,
-        opts.stateCheck,
-        seed
-      )
-      tracesReplayed++
-    }
+    const results = yield* Effect.forEach(
+      Arr.map(traces, (trace, traceIndex) => ({ trace, traceIndex })),
+      ({ trace, traceIndex }) =>
+        Effect.gen(function*() {
+          const driver = yield* opts.driverFactory.create()
+          const config = driver.config?.() ?? defaultConfig
+          yield* replayTrace(
+            trace,
+            traceIndex,
+            driver,
+            config,
+            opts.stateCheck,
+            seed
+          )
+        }),
+      { concurrency: opts.concurrency ?? 1 }
+    )
 
-    return { tracesReplayed, seed }
+    return { tracesReplayed: results.length, seed }
   })
