@@ -16,7 +16,7 @@
 ## Post-v1
 
 - [ ] `quint test` support — blocked on quint issue #1842 (--mbt flag for quint test)
-- [ ] Backend choice — add `--backend rust` option (faster but requires quint rust evaluator binary)
+- [x] Backend choice — add `--backend rust` option (faster but requires quint rust evaluator binary)
 - [ ] Opt-in state comparison — allow drivers to skip state validation
 - [ ] Worker threads — parallelize trace replay for large trace sets
 - [ ] Typed nondet picks — effect/Schema-based per-action pick extraction:
