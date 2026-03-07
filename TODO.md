@@ -7,10 +7,11 @@
 - [x] Driver interface — Step, Config, DriverFactory, StateComparator
 - [x] CLI spawning — npx @informalsystems/quint run --mbt --backend typescript
 - [x] Runner — trace generation, replay, state comparison, error reporting
-- [ ] Tests — unit tests for ITF parsing, integration test with a real .qnt spec
-- [ ] Seed propagation — expose seed from quint output for reproducibility
+- [x] Tests — unit tests for ITF parsing, integration test with a real .qnt spec
+- [x] Nondet pick helpers — unwrap Quint Option variant encoding (Some/None) for common types
+- [x] Seed propagation — expose seed from quint output for reproducibility
 - [ ] Verbosity control — QUINT_VERBOSE env var passthrough
-- [ ] README with usage example
+- [x] README with usage example
 
 ## Post-v1
 

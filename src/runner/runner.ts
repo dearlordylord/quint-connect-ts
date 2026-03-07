@@ -112,10 +112,17 @@ export type QuintRunOptions<S, E, R> = RunOptions & {
   readonly deserializeState: (raw: unknown) => Effect.Effect<S>
 }
 
+const extractSeed = (traces: ReadonlyArray<ItfTrace>): string | undefined => {
+  const meta = traces[0]?.["#meta"]
+  if (meta === undefined) return undefined
+  const seed = meta["seed"]
+  return typeof seed === "string" ? seed : typeof seed === "number" ? String(seed) : undefined
+}
+
 export const quintRun = <S, E, R>(
   opts: QuintRunOptions<S, E, R>
 ): Effect.Effect<
-  { readonly tracesReplayed: number },
+  { readonly tracesReplayed: number; readonly seed?: string | undefined },
   E | QuintError | QuintNotFoundError | StateMismatchError | TraceReplayError | NoTracesError,
   R | FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
 > =>
@@ -126,6 +133,8 @@ export const quintRun = <S, E, R>(
         message: "quint run produced no traces"
       })
     }
+
+    const seed = extractSeed(traces)
 
     let tracesReplayed = 0
     for (const [traceIndex, trace] of traces.entries()) {
@@ -142,5 +151,5 @@ export const quintRun = <S, E, R>(
       tracesReplayed++
     }
 
-    return { tracesReplayed }
+    return { tracesReplayed, seed }
   })

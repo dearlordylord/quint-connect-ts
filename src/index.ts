@@ -9,3 +9,5 @@ export { NoTracesError, quintRun, StateMismatchError, TraceReplayError } from ".
 
 export { ItfBigInt, ItfMap, ItfSet, ItfTrace, ItfUnserializable, MbtMeta } from "./itf/schema.js"
 export type { ItfValue } from "./itf/schema.js"
+
+export { ItfOption, pickFrom } from "./itf/picks.js"

@@ -4,24 +4,9 @@ import { Effect, Schema } from "effect"
 import * as path from "node:path"
 import { expect } from "vitest"
 import type { Driver, Step } from "../src/driver/types.js"
+import { pickFrom } from "../src/itf/picks.js"
 import { ItfBigInt } from "../src/itf/schema.js"
 import { quintRun } from "../src/runner/runner.js"
-
-// Quint nondet picks use Option variant encoding:
-// Some(x) = { tag: "Some", value: x }
-// None    = { tag: "None", value: { "#tup": [] } }
-const extractNondetBigInt = (picks: ReadonlyMap<string, unknown>, key: string): bigint | undefined => {
-  const raw = picks.get(key)
-  if (typeof raw !== "object" || raw === null) return undefined
-  const variant = raw as { readonly tag: string; readonly value: unknown }
-  if (variant.tag === "None") return undefined
-  if (variant.tag !== "Some") return undefined
-  const val = variant.value
-  if (typeof val !== "object" || val === null) return undefined
-  const bigintObj = val as { readonly "#bigint"?: string }
-  if (typeof bigintObj["#bigint"] !== "string") return undefined
-  return BigInt(bigintObj["#bigint"])
-}
 
 type CounterState = { readonly count: bigint }
 
@@ -35,10 +20,10 @@ const createCounterDriver = (): Driver<CounterState> => {
   let count = 0n
   return {
     step: (step: Step) =>
-      Effect.sync(() => {
+      Effect.gen(function*() {
         switch (step.action) {
           case "Increment": {
-            const amount = extractNondetBigInt(step.nondetPicks, "amount")
+            const amount = yield* pickFrom(step, "amount", ItfBigInt)
             if (amount !== undefined) {
               count = count + amount
             }
