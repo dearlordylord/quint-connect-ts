@@ -7,8 +7,8 @@ import { ItfTrace } from "../itf/schema.js"
 
 export class QuintError extends Schema.TaggedError<QuintError>()("QuintError", {
   message: Schema.String,
-  stderr: Schema.String,
-  exitCode: Schema.Number
+  stderr: Schema.optional(Schema.String),
+  exitCode: Schema.optional(Schema.Number)
 }) {}
 
 export class QuintNotFoundError extends Schema.TaggedError<QuintNotFoundError>()("QuintNotFoundError", {
@@ -77,7 +77,7 @@ export const generateTraces = (
     const path = yield* Path.Path
     const tmpDir = yield* Effect.mapError(
       fs.makeTempDirectoryScoped(),
-      (e) => new QuintError({ message: `Failed to create temp directory: ${e}`, stderr: "", exitCode: 0 })
+      (e) => new QuintError({ message: `Failed to create temp directory: ${e}` })
     )
     const args = buildRunArgs(opts, tmpDir)
     const cmd = Command.make("npx", "@informalsystems/quint", ...args)
@@ -87,12 +87,13 @@ export const generateTraces = (
     )
     const exitCode = yield* Effect.mapError(
       process.exitCode,
-      (e) => new QuintError({ message: `quint process error: ${e}`, stderr: "", exitCode: -1 })
+      (e) => new QuintError({ message: `quint process error: ${e}` })
     )
     if (exitCode !== 0) {
+      const decoder = new TextDecoder()
       const stderr = yield* Effect.mapError(
-        Stream.runFold(process.stderr, "", (acc, chunk) => acc + new TextDecoder().decode(chunk)),
-        (e) => new QuintError({ message: `Failed to read stderr: ${e}`, stderr: "", exitCode })
+        Stream.runFold(process.stderr, "", (acc, chunk) => acc + decoder.decode(chunk)),
+        (e) => new QuintError({ message: `Failed to read stderr: ${e}` })
       )
       return yield* new QuintError({
         message: `quint run failed with exit code ${exitCode}`,
@@ -102,7 +103,7 @@ export const generateTraces = (
     }
     const files = yield* Effect.mapError(
       fs.readDirectory(tmpDir),
-      (e) => new QuintError({ message: `Failed to read trace directory: ${e}`, stderr: "", exitCode: 0 })
+      (e) => new QuintError({ message: `Failed to read trace directory: ${e}` })
     )
     const traceFiles = files
       .filter((f: string) => f.endsWith(".itf.json"))
@@ -111,15 +112,15 @@ export const generateTraces = (
     for (const file of traceFiles) {
       const content = yield* Effect.mapError(
         fs.readFileString(path.join(tmpDir, file)),
-        (e) => new QuintError({ message: `Failed to read trace file ${file}: ${e}`, stderr: "", exitCode: 0 })
+        (e) => new QuintError({ message: `Failed to read trace file ${file}: ${e}` })
       )
       const json: unknown = yield* Effect.try({
         try: () => JSON.parse(content),
-        catch: (e) => new QuintError({ message: `Invalid JSON in trace file ${file}: ${e}`, stderr: "", exitCode: 0 })
+        catch: (e) => new QuintError({ message: `Invalid JSON in trace file ${file}: ${e}` })
       })
       const trace = yield* Effect.mapError(
         Schema.decodeUnknown(ItfTrace)(json),
-        (e) => new QuintError({ message: `Failed to parse ITF trace ${file}: ${e}`, stderr: "", exitCode: 0 })
+        (e) => new QuintError({ message: `Failed to parse ITF trace ${file}: ${e}` })
       )
       traces.push(trace)
     }

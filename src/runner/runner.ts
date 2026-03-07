@@ -21,7 +21,8 @@ export class TraceReplayError extends Schema.TaggedError<TraceReplayError>()("Tr
   message: Schema.String,
   traceIndex: Schema.Number,
   stepIndex: Schema.Number,
-  action: Schema.String
+  action: Schema.String,
+  cause: Schema.optional(Schema.Unknown)
 }) {}
 
 export class NoTracesError extends Schema.TaggedError<NoTracesError>()("NoTracesError", {
@@ -86,7 +87,8 @@ const replayTrace = <S, E, R>(
             message: `Driver step failed: ${String(e)}`,
             traceIndex,
             stepIndex,
-            action: step.action
+            action: step.action,
+            cause: e
           })
       )
 

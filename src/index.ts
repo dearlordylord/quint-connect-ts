@@ -1,13 +1,15 @@
-export type { Config, Driver, DriverFactory, StateComparator, Step } from "./driver/types.js"
-export { defaultConfig } from "./driver/types.js"
+export {
+  decodeBigInt,
+  decodeMap,
+  decodeSet,
+  defaultConfig,
+  NoTracesError,
+  pick,
+  QuintError,
+  QuintNotFoundError,
+  run,
+  StateMismatchError,
+  TraceReplayError
+} from "./simple.js"
 
-export type { RunOptions } from "./cli/quint.js"
-export { generateTraces, QuintError, QuintNotFoundError } from "./cli/quint.js"
-
-export type { QuintRunOptions } from "./runner/runner.js"
-export { NoTracesError, quintRun, StateMismatchError, TraceReplayError } from "./runner/runner.js"
-
-export { ItfBigInt, ItfMap, ItfOption, ItfSet, ItfTrace, ItfUnserializable, MbtMeta } from "./itf/schema.js"
-export type { ItfValue } from "./itf/schema.js"
-
-export { pickFrom } from "./itf/picks.js"
+export type { Config, RunOptions, SimpleDriver, SimpleRunOptions, Step } from "./simple.js"

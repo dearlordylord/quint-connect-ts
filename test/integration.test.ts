@@ -5,13 +5,13 @@ import * as path from "node:path"
 import { expect } from "vitest"
 import type { Driver, Step } from "../src/driver/types.js"
 import { pickFrom } from "../src/itf/picks.js"
-import { ItfBigInt } from "../src/itf/schema.js"
+import { ITFBigInt } from "../src/itf/schema.js"
 import { quintRun } from "../src/runner/runner.js"
 
 type CounterState = { readonly count: bigint }
 
 const CounterStateSchema = Schema.Struct({
-  count: ItfBigInt
+  count: ITFBigInt
 })
 
 const specDir = path.resolve(import.meta.dirname, "specs")
@@ -23,7 +23,7 @@ const createCounterDriver = (): Driver<CounterState> => {
       Effect.gen(function*() {
         switch (step.action) {
           case "Increment": {
-            const amount = yield* pickFrom(step, "amount", ItfBigInt)
+            const amount = yield* pickFrom(step, "amount", ITFBigInt)
             if (amount !== undefined) {
               count = count + amount
             }

@@ -3,10 +3,10 @@ import { Effect, Schema } from "effect"
 import { expect } from "vitest"
 import type { Step } from "../src/driver/types.js"
 import { pickFrom } from "../src/itf/picks.js"
-import { ItfBigInt, ItfOption } from "../src/itf/schema.js"
+import { ITFBigInt, ItfOption } from "../src/itf/schema.js"
 
 describe("ItfOption", () => {
-  const OptionBigInt = ItfOption(ItfBigInt)
+  const OptionBigInt = ItfOption(ITFBigInt)
 
   it.effect("decodes Some(bigint)", () =>
     Effect.gen(function*() {
@@ -55,7 +55,7 @@ describe("pickFrom", () => {
       const step = makeStep({
         amount: { tag: "Some", value: { "#bigint": "100" } }
       })
-      const result = yield* pickFrom(step, "amount", ItfBigInt)
+      const result = yield* pickFrom(step, "amount", ITFBigInt)
       expect(result).toBe(100n)
     }))
 
@@ -64,14 +64,14 @@ describe("pickFrom", () => {
       const step = makeStep({
         amount: { tag: "None", value: { "#tup": [] } }
       })
-      const result = yield* pickFrom(step, "amount", ItfBigInt)
+      const result = yield* pickFrom(step, "amount", ITFBigInt)
       expect(result).toBeUndefined()
     }))
 
   it.effect("returns undefined for missing key", () =>
     Effect.gen(function*() {
       const step = makeStep({})
-      const result = yield* pickFrom(step, "amount", ItfBigInt)
+      const result = yield* pickFrom(step, "amount", ITFBigInt)
       expect(result).toBeUndefined()
     }))
 })
