@@ -3,7 +3,7 @@ import { Effect, Predicate, Schema } from "effect"
 
 import type { RunOptions } from "./cli/quint.js"
 import type { Config, Driver, Step } from "./driver/types.js"
-import { ITFBigInt } from "./itf/schema.js"
+import { ITFBigInt, ITFUnserializable } from "./itf/schema.js"
 import { quintRun } from "./runner/runner.js"
 
 // Re-export framework-agnostic types
@@ -122,3 +122,19 @@ export const decodeMap = <K, V>(
   )(raw)
   return new Map(struct["#map"].map(([k, v]) => [decodeKey(k), decodeValue(v)] as const))
 }
+
+export const decodeTuple = (raw: unknown): ReadonlyArray<unknown> =>
+  Schema.decodeUnknownSync(
+    Schema.Struct({ "#tup": Schema.Array(Schema.Unknown) })
+  )(raw)["#tup"]
+
+export const decodeList = <A>(
+  raw: unknown,
+  decodeItem: (v: unknown) => A
+): ReadonlyArray<A> => {
+  const arr = Schema.decodeUnknownSync(Schema.Array(Schema.Unknown))(raw)
+  return arr.map(decodeItem)
+}
+
+export const decodeUnserializable = (raw: unknown): string =>
+  Schema.decodeUnknownSync(ITFUnserializable)(raw)["#unserializable"]

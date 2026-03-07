@@ -1,7 +1,8 @@
 import { describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
-import { expect } from "vitest"
-import { ITFBigInt, ITFMap, ITFSet, ItfTrace, MbtMeta } from "../src/itf/schema.js"
+import { describe as stdDescribe, expect, it as stdIt } from "vitest"
+import { ITFBigInt, ITFMap, ITFSet, ItfTrace, ITFTuple, ITFUnserializable, MbtMeta } from "../src/itf/schema.js"
+import { decodeBigInt, decodeList, decodeMap, decodeSet, decodeTuple, decodeUnserializable } from "../src/simple.js"
 
 describe("ITF Schema", () => {
   describe("ITFBigInt", () => {
@@ -60,6 +61,43 @@ describe("ITF Schema", () => {
       }))
   })
 
+  describe("ITFTuple", () => {
+    it.effect("decodes a tuple of two bigints", () =>
+      Effect.gen(function*() {
+        const PairSchema = ITFTuple(ITFBigInt, ITFBigInt)
+        const result = yield* Schema.decodeUnknown(PairSchema)({
+          "#tup": [{ "#bigint": "1" }, { "#bigint": "2" }]
+        })
+        expect(result).toEqual([1n, 2n])
+      }))
+
+    it.effect("decodes an empty tuple", () =>
+      Effect.gen(function*() {
+        const EmptySchema = ITFTuple()
+        const result = yield* Schema.decodeUnknown(EmptySchema)({ "#tup": [] })
+        expect(result).toEqual([])
+      }))
+
+    it.effect("decodes a mixed tuple", () =>
+      Effect.gen(function*() {
+        const MixedSchema = ITFTuple(Schema.String, ITFBigInt, Schema.Boolean)
+        const result = yield* Schema.decodeUnknown(MixedSchema)({
+          "#tup": ["hello", { "#bigint": "42" }, true]
+        })
+        expect(result).toEqual(["hello", 42n, true])
+      }))
+  })
+
+  describe("ITFUnserializable", () => {
+    it.effect("decodes unserializable value", () =>
+      Effect.gen(function*() {
+        const result = yield* Schema.decodeUnknown(ITFUnserializable)({
+          "#unserializable": "lambda"
+        })
+        expect(result).toEqual({ "#unserializable": "lambda" })
+      }))
+  })
+
   describe("ItfTrace", () => {
     it.effect("decodes a minimal trace", () =>
       Effect.gen(function*() {
@@ -77,5 +115,115 @@ describe("ITF Schema", () => {
         expect(result.vars).toEqual(["balance", "step"])
         expect(result.states).toHaveLength(1)
       }))
+  })
+})
+
+stdDescribe("Sync ITF decoders", () => {
+  stdDescribe("decodeBigInt", () => {
+    stdIt("decodes bigint", () => {
+      expect(decodeBigInt({ "#bigint": "42" })).toBe(42n)
+    })
+
+    stdIt("decodes negative bigint", () => {
+      expect(decodeBigInt({ "#bigint": "-100" })).toBe(-100n)
+    })
+
+    stdIt("throws on invalid input", () => {
+      expect(() => decodeBigInt("not a bigint")).toThrow()
+    })
+  })
+
+  stdDescribe("decodeSet", () => {
+    stdIt("decodes set with decoder", () => {
+      const result = decodeSet(
+        { "#set": [{ "#bigint": "1" }, { "#bigint": "2" }] },
+        decodeBigInt
+      )
+      expect(result).toEqual(new Set([1n, 2n]))
+    })
+
+    stdIt("decodes empty set", () => {
+      const result = decodeSet({ "#set": [] }, (x) => x)
+      expect(result).toEqual(new Set())
+    })
+  })
+
+  stdDescribe("decodeMap", () => {
+    stdIt("decodes map with decoders", () => {
+      const result = decodeMap(
+        { "#map": [["a", { "#bigint": "1" }], ["b", { "#bigint": "2" }]] },
+        String,
+        decodeBigInt
+      )
+      expect(result).toEqual(new Map([["a", 1n], ["b", 2n]]))
+    })
+
+    stdIt("decodes empty map", () => {
+      const result = decodeMap({ "#map": [] }, (x) => x, (x) => x)
+      expect(result).toEqual(new Map())
+    })
+  })
+
+  stdDescribe("decodeTuple", () => {
+    stdIt("decodes tuple elements", () => {
+      const result = decodeTuple({ "#tup": [1, "hello", true] })
+      expect(result).toEqual([1, "hello", true])
+    })
+
+    stdIt("decodes empty tuple", () => {
+      const result = decodeTuple({ "#tup": [] })
+      expect(result).toEqual([])
+    })
+
+    stdIt("decodes nested ITF values in tuple", () => {
+      const result = decodeTuple({ "#tup": [{ "#bigint": "42" }, "x"] })
+      expect(result[0]).toEqual({ "#bigint": "42" })
+      expect(decodeBigInt(result[0])).toBe(42n)
+      expect(result[1]).toBe("x")
+    })
+
+    stdIt("throws on non-tuple input", () => {
+      expect(() => decodeTuple([1, 2])).toThrow()
+      expect(() => decodeTuple("not a tuple")).toThrow()
+    })
+  })
+
+  stdDescribe("decodeList", () => {
+    stdIt("decodes list with item decoder", () => {
+      const result = decodeList(
+        [{ "#bigint": "1" }, { "#bigint": "2" }, { "#bigint": "3" }],
+        decodeBigInt
+      )
+      expect(result).toEqual([1n, 2n, 3n])
+    })
+
+    stdIt("decodes empty list", () => {
+      const result = decodeList([], (x) => x)
+      expect(result).toEqual([])
+    })
+
+    stdIt("decodes list of strings (identity)", () => {
+      const result = decodeList(["a", "b", "c"], String)
+      expect(result).toEqual(["a", "b", "c"])
+    })
+
+    stdIt("throws on non-array input", () => {
+      expect(() => decodeList("not an array", (x) => x)).toThrow()
+    })
+  })
+
+  stdDescribe("decodeUnserializable", () => {
+    stdIt("extracts unserializable string", () => {
+      expect(decodeUnserializable({ "#unserializable": "lambda" })).toBe("lambda")
+    })
+
+    stdIt("extracts empty unserializable string", () => {
+      expect(decodeUnserializable({ "#unserializable": "" })).toBe("")
+    })
+
+    stdIt("throws on invalid input", () => {
+      expect(() => decodeUnserializable({ wrong: "key" })).toThrow()
+      expect(() => decodeUnserializable("not an object")).toThrow()
+    })
   })
 })

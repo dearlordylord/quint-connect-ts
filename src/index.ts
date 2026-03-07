@@ -1,7 +1,10 @@
 export {
   decodeBigInt,
+  decodeList,
   decodeMap,
   decodeSet,
+  decodeTuple,
+  decodeUnserializable,
   defaultConfig,
   NoTracesError,
   pick,
