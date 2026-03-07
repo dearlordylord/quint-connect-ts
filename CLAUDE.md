@@ -9,7 +9,7 @@ Use `pnpm`, not npm. Prefer package.json scripts over raw commands (e.g., `pnpm 
 ## Verification
 
 Run before considering work complete:
-1. `pnpm build && pnpm typecheck && pnpm lint && pnpm test`
+1. `pnpm run ci`
 
 ## Type Safety
 
@@ -25,11 +25,15 @@ Type casts (`as T`) are a sin. Avoid them. All data crossing system boundaries (
 
 ## Architecture
 
-- `src/itf/` — ITF format types and effect/Schema parsers (Apalache ADR-015)
+- `src/itf/` — ITF Option/MbtMeta schemas; ITF type decoders via `@firfi/itf-trace-parser`
 - `src/driver/` — Driver interface, Step, Config types
 - `src/cli/` — Quint CLI subprocess spawning and trace file reading
 - `src/runner/` — Trace replay orchestration and state comparison
-- `src/index.ts` — Public API re-exports
+- `src/simple.ts` — Simple (non-Effect) API: `run`, `pick`, sync decoders
+- `src/effect.ts` — Effect API re-exports
+- `src/index.ts` — Default entry point, re-exports simple API
+
+Dual entry points: `@firfi/quint-connect` (simple) and `@firfi/quint-connect/effect` (Effect).
 
 ## Key Design Decisions
 
@@ -37,4 +41,6 @@ Type casts (`as T`) are a sin. Avoid them. All data crossing system boundaries (
 - **State comparison**: Full comparison after every step (Rust feature parity)
 - **Framework-agnostic**: Throws on failure, works with any test runner
 - **Temp directory**: Effect-managed scoped resource, auto-cleanup
-- **ITF types**: Own schemas, not importing from @informalsystems/quint internals
+- **ITF types**: Via `@firfi/itf-trace-parser`; Quint-specific schemas (ItfOption, MbtMeta) in `src/itf/`
+- **Dual API**: Simple API (default) wraps Effect internals; Effect API for advanced users
+- **Releases**: Use `npx changeset` to describe changes, `pnpm local-release` to version + publish
