@@ -7,7 +7,7 @@ export { generateTraces, QuintError, QuintNotFoundError } from "./cli/quint.js"
 export type { QuintRunOptions } from "./runner/runner.js"
 export { NoTracesError, quintRun, StateMismatchError, TraceReplayError } from "./runner/runner.js"
 
-export { ItfBigInt, ItfMap, ItfSet, ItfTrace, ItfUnserializable, MbtMeta } from "./itf/schema.js"
+export { ItfBigInt, ItfMap, ItfOption, ItfSet, ItfTrace, ItfUnserializable, MbtMeta } from "./itf/schema.js"
 export type { ItfValue } from "./itf/schema.js"
 
-export { ItfOption, pickFrom } from "./itf/picks.js"
+export { pickFrom } from "./itf/picks.js"

@@ -2,8 +2,8 @@ import { describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import { expect } from "vitest"
 import type { Step } from "../src/driver/types.js"
-import { ItfOption, pickFrom } from "../src/itf/picks.js"
-import { ItfBigInt } from "../src/itf/schema.js"
+import { pickFrom } from "../src/itf/picks.js"
+import { ItfBigInt, ItfOption } from "../src/itf/schema.js"
 
 describe("ItfOption", () => {
   const OptionBigInt = ItfOption(ItfBigInt)

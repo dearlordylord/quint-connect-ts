@@ -1,7 +1,7 @@
 import type * as CommandExecutor from "@effect/platform/CommandExecutor"
 import type * as FileSystem from "@effect/platform/FileSystem"
 import type * as Path from "@effect/platform/Path"
-import { Effect, Schema } from "effect"
+import { Effect, Predicate, Schema } from "effect"
 import type { QuintError, QuintNotFoundError, RunOptions } from "../cli/quint.js"
 import { generateTraces } from "../cli/quint.js"
 import type { Config, Driver, DriverFactory, StateComparator } from "../driver/types.js"
@@ -44,15 +44,13 @@ const extractMbtMeta = (
       })
   )
 
-const isRecord = (v: unknown): v is Readonly<Record<string, unknown>> => typeof v === "object" && v !== null
-
 const resolveNestedValue = (
   obj: { readonly [key: string]: unknown },
   path: ReadonlyArray<string>
 ): unknown => {
   let current: unknown = obj
   for (const key of path) {
-    if (!isRecord(current) || !(key in current)) {
+    if (!Predicate.isRecord(current) || !(key in current)) {
       return undefined
     }
     current = current[key]

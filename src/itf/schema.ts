@@ -39,6 +39,35 @@ export const ItfMap = <K, KI, KR, V, VI, VR>(
 
 export const ItfUnserializable = Schema.Struct({ "#unserializable": Schema.String })
 
+// Quint encodes nondet picks as Option variants:
+// Some(x) = { tag: "Some", value: x }
+// None    = { tag: "None", value: { "#tup": [] } }
+
+const ItfNone = Schema.Struct({
+  tag: Schema.Literal("None"),
+  value: Schema.Unknown
+})
+
+const ItfSome = <A, I, R>(inner: Schema.Schema<A, I, R>) =>
+  Schema.Struct({
+    tag: Schema.Literal("Some"),
+    value: inner
+  })
+
+export const ItfOption = <A, I, R>(inner: Schema.Schema<A, I, R>) =>
+  Schema.transform(
+    Schema.Union(ItfSome(inner), ItfNone),
+    Schema.UndefinedOr(Schema.typeSchema(inner)),
+    {
+      strict: true,
+      decode: (v) => v.tag === "Some" ? v.value : undefined,
+      encode: (v) =>
+        v !== undefined
+          ? { tag: "Some" as const, value: v }
+          : { tag: "None" as const, value: { "#tup": [] } }
+    }
+  )
+
 export type ItfValue =
   | boolean
   | string
