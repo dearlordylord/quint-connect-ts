@@ -29,18 +29,22 @@ export class NoTracesError extends Schema.TaggedError<NoTracesError>()("NoTraces
 }) {}
 
 const extractMbtMeta = (
-  state: { readonly [key: string]: unknown }
+  state: { readonly [key: string]: unknown },
+  traceIndex: number,
+  stepIndex: number
 ): Effect.Effect<MbtMeta, TraceReplayError> =>
   Effect.mapError(
     Schema.decodeUnknown(MbtMetaSchema)(state),
     (e) =>
       new TraceReplayError({
         message: `Failed to extract MBT metadata: ${e}`,
-        traceIndex: 0,
-        stepIndex: 0,
+        traceIndex,
+        stepIndex,
         action: "unknown"
       })
   )
+
+const isRecord = (v: unknown): v is Readonly<Record<string, unknown>> => typeof v === "object" && v !== null
 
 const resolveNestedValue = (
   obj: { readonly [key: string]: unknown },
@@ -48,10 +52,10 @@ const resolveNestedValue = (
 ): unknown => {
   let current: unknown = obj
   for (const key of path) {
-    if (typeof current !== "object" || current === null || !(key in current)) {
+    if (!isRecord(current) || !(key in current)) {
       return undefined
     }
-    current = (current as Record<string, unknown>)[key]
+    current = current[key]
   }
   return current
 }
@@ -68,7 +72,7 @@ const replayTrace = <S, E, R>(
     for (const [stepIndex, rawState] of trace.states.entries()) {
       if (stepIndex === 0) continue // skip init state
 
-      const meta = yield* extractMbtMeta(rawState)
+      const meta = yield* extractMbtMeta(rawState, traceIndex, stepIndex)
       const nondetPicks = new Map(Object.entries(meta["mbt::nondetPicks"]))
 
       const step = {
@@ -79,13 +83,13 @@ const replayTrace = <S, E, R>(
 
       yield* Effect.mapError(
         driver.step(step),
-        (e) =>
+        (e: E) =>
           new TraceReplayError({
             message: `Driver step failed: ${String(e)}`,
             traceIndex,
             stepIndex,
             action: step.action
-          }) as E | TraceReplayError
+          })
       )
 
       const specStateRaw = config.statePath.length > 0
@@ -112,17 +116,10 @@ export type QuintRunOptions<S, E, R> = RunOptions & {
   readonly deserializeState: (raw: unknown) => Effect.Effect<S>
 }
 
-const extractSeed = (traces: ReadonlyArray<ItfTrace>): string | undefined => {
-  const meta = traces[0]?.["#meta"]
-  if (meta === undefined) return undefined
-  const seed = meta["seed"]
-  return typeof seed === "string" ? seed : typeof seed === "number" ? String(seed) : undefined
-}
-
 export const quintRun = <S, E, R>(
   opts: QuintRunOptions<S, E, R>
 ): Effect.Effect<
-  { readonly tracesReplayed: number; readonly seed?: string | undefined },
+  { readonly tracesReplayed: number },
   E | QuintError | QuintNotFoundError | StateMismatchError | TraceReplayError | NoTracesError,
   R | FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
 > =>
@@ -133,8 +130,6 @@ export const quintRun = <S, E, R>(
         message: "quint run produced no traces"
       })
     }
-
-    const seed = extractSeed(traces)
 
     let tracesReplayed = 0
     for (const [traceIndex, trace] of traces.entries()) {
@@ -151,5 +146,5 @@ export const quintRun = <S, E, R>(
       tracesReplayed++
     }
 
-    return { tracesReplayed, seed }
+    return { tracesReplayed }
   })

@@ -9,7 +9,7 @@
 - [x] Runner — trace generation, replay, state comparison, error reporting
 - [x] Tests — unit tests for ITF parsing, integration test with a real .qnt spec
 - [x] Nondet pick helpers — unwrap Quint Option variant encoding (Some/None) for common types
-- [x] Seed propagation — expose seed from quint output for reproducibility
+- [ ] Seed propagation — blocked: quint doesn't embed auto-generated seed in ITF #meta or stderr
 - [ ] Verbosity control — QUINT_VERBOSE env var passthrough
 - [x] README with usage example
 

@@ -72,7 +72,7 @@ await Effect.runPromise(
 
 ## API
 
-- **`quintRun(opts)`** -- generate traces via `quint run --mbt` and replay them through a driver. Returns `{ tracesReplayed, seed? }`.
+- **`quintRun(opts)`** -- generate traces via `quint run --mbt` and replay them through a driver. Returns `{ tracesReplayed }`.
 - **`generateTraces(opts)`** -- just spawn quint and parse ITF traces without replaying.
 - **`pickFrom(step, key, schema)`** -- extract a nondet pick from a step, unwrapping Quint's `Some`/`None` Option encoding.
 - **`ItfOption(schema)`** -- Effect Schema that decodes Quint's Option variant (`{ tag: "Some", value }` / `{ tag: "None", ... }`) to `A | undefined`.

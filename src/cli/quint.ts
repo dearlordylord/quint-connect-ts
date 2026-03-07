@@ -113,7 +113,10 @@ export const generateTraces = (
         fs.readFileString(path.join(tmpDir, file)),
         (e) => new QuintError({ message: `Failed to read trace file ${file}: ${e}`, stderr: "", exitCode: 0 })
       )
-      const json: unknown = JSON.parse(content)
+      const json: unknown = yield* Effect.try({
+        try: () => JSON.parse(content),
+        catch: (e) => new QuintError({ message: `Invalid JSON in trace file ${file}: ${e}`, stderr: "", exitCode: 0 })
+      })
       const trace = yield* Effect.mapError(
         Schema.decodeUnknown(ItfTrace)(json),
         (e) => new QuintError({ message: `Failed to parse ITF trace ${file}: ${e}`, stderr: "", exitCode: 0 })
