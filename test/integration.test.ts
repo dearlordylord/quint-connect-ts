@@ -51,11 +51,14 @@ describe("Integration: counter spec", () => {
         driverFactory: {
           create: () => Effect.succeed(createCounterDriver())
         },
-        compareState: (spec: CounterState, impl: CounterState) => spec.count === impl.count,
-        deserializeState: (raw) => Schema.decodeUnknown(CounterStateSchema)(raw).pipe(Effect.orDie)
+        stateCheck: {
+          compareState: (spec: CounterState, impl: CounterState) => spec.count === impl.count,
+          deserializeState: (raw) => Schema.decodeUnknown(CounterStateSchema)(raw).pipe(Effect.orDie)
+        }
       })
 
       expect(result.tracesReplayed).toBeGreaterThan(0)
+      expect(result.seed).toBe("1")
     }).pipe(
       Effect.provide(NodeContext.layer),
       Effect.scoped

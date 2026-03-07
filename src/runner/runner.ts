@@ -14,7 +14,8 @@ export class StateMismatchError extends Schema.TaggedError<StateMismatchError>()
   traceIndex: Schema.Number,
   stepIndex: Schema.Number,
   expected: Schema.Unknown,
-  actual: Schema.Unknown
+  actual: Schema.Unknown,
+  showDiff: Schema.optionalWith(Schema.Boolean, { default: () => true })
 }) {}
 
 export class TraceReplayError extends Schema.TaggedError<TraceReplayError>()("TraceReplayError", {
@@ -59,23 +60,59 @@ const resolveNestedValue = (
   return current
 }
 
+// Extract action + nondet picks from a sum type at a custom path
+// (Choreo-style specs where action is encoded as { tag: "ActionName", value: { picks... } })
+const extractFromNondetPath = (
+  state: { readonly [key: string]: unknown },
+  nondetPath: ReadonlyArray<string>,
+  traceIndex: number,
+  stepIndex: number
+): Effect.Effect<{ action: string; nondetPicks: ReadonlyMap<string, unknown> }, TraceReplayError> => {
+  const raw = resolveNestedValue(state, nondetPath)
+  if (!Predicate.isRecord(raw) || typeof raw["tag"] !== "string") {
+    return Effect.fail(new TraceReplayError({
+      message: `Expected sum type {tag, value} at path ${nondetPath.join(".")}, got: ${JSON.stringify(raw)}`,
+      traceIndex,
+      stepIndex,
+      action: "unknown"
+    }))
+  }
+  const action = raw["tag"]
+  const value = raw["value"]
+  const picks = Predicate.isRecord(value) ? new Map(Object.entries(value)) : new Map<string, unknown>()
+  return Effect.succeed({ action, nondetPicks: picks })
+}
+
 const replayTrace = <S, E, R>(
   trace: ItfTrace,
   traceIndex: number,
   driver: Driver<S, E, R>,
   config: Config,
-  compareState: StateComparator<S>,
-  deserializeState: (raw: unknown) => Effect.Effect<S>
+  stateCheck: StateCheck<S> | undefined,
+  seed: string
 ): Effect.Effect<void, E | StateMismatchError | TraceReplayError, R> =>
   Effect.gen(function*() {
     for (const [stepIndex, rawState] of trace.states.entries()) {
       if (stepIndex === 0) continue // skip init state
 
-      const meta = yield* extractMbtMeta(rawState, traceIndex, stepIndex)
-      const nondetPicks = new Map(Object.entries(meta["mbt::nondetPicks"]))
+      const { action, nondetPicks } = config.nondetPath.length > 0
+        ? yield* extractFromNondetPath(rawState, config.nondetPath, traceIndex, stepIndex)
+        : yield* Effect.map(extractMbtMeta(rawState, traceIndex, stepIndex), (meta) => ({
+          action: meta["mbt::actionTaken"],
+          nondetPicks: new Map(Object.entries(meta["mbt::nondetPicks"]))
+        }))
+
+      if (action === "") {
+        return yield* new TraceReplayError({
+          message: `Anonymous action at trace ${traceIndex}, step ${stepIndex}`,
+          traceIndex,
+          stepIndex,
+          action: ""
+        })
+      }
 
       const step = {
-        action: meta["mbt::actionTaken"],
+        action,
         nondetPicks,
         rawState
       }
@@ -92,39 +129,49 @@ const replayTrace = <S, E, R>(
           })
       )
 
-      const specStateRaw = config.statePath.length > 0
-        ? resolveNestedValue(rawState, config.statePath)
-        : rawState
-      const specState = yield* deserializeState(specStateRaw)
-      const implState = yield* driver.getState()
+      if (stateCheck !== undefined) {
+        const specStateRaw = config.statePath.length > 0
+          ? resolveNestedValue(rawState, config.statePath)
+          : rawState
+        const specState = yield* stateCheck.deserializeState(specStateRaw)
+        const implState = yield* driver.getState()
 
-      if (!compareState(specState, implState)) {
-        return yield* new StateMismatchError({
-          message: `State mismatch at trace ${traceIndex}, step ${stepIndex}, action "${step.action}"`,
-          traceIndex,
-          stepIndex,
-          expected: specState,
-          actual: implState
-        })
+        if (!stateCheck.compareState(specState, implState)) {
+          return yield* new StateMismatchError({
+            message: `State mismatch at trace ${traceIndex}, step ${stepIndex}, action "${step.action}" (seed: ${seed})`,
+            traceIndex,
+            stepIndex,
+            expected: specState,
+            actual: implState
+          })
+        }
       }
     }
   })
 
-export type QuintRunOptions<S, E, R> = RunOptions & {
-  readonly driverFactory: DriverFactory<S, E, R>
+export interface StateCheck<S> {
   readonly compareState: StateComparator<S>
   readonly deserializeState: (raw: unknown) => Effect.Effect<S>
 }
 
+export type QuintRunOptions<S, E, R> = RunOptions & {
+  readonly driverFactory: DriverFactory<S, E, R>
+  readonly stateCheck?: StateCheck<S> | undefined
+}
+
+const resolveSeed = (opts: RunOptions): string =>
+  opts.seed ?? process.env["QUINT_SEED"] ?? `0x${Math.floor(Math.random() * 0xFFFFFFFF).toString(16).padStart(8, "0")}`
+
 export const quintRun = <S, E, R>(
   opts: QuintRunOptions<S, E, R>
 ): Effect.Effect<
-  { readonly tracesReplayed: number },
+  { readonly tracesReplayed: number; readonly seed: string },
   E | QuintError | QuintNotFoundError | StateMismatchError | TraceReplayError | NoTracesError,
   R | FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
 > =>
   Effect.gen(function*() {
-    const traces = yield* generateTraces(opts)
+    const seed = resolveSeed(opts)
+    const traces = yield* generateTraces({ ...opts, seed })
     if (traces.length === 0) {
       return yield* new NoTracesError({
         message: "quint run produced no traces"
@@ -140,11 +187,11 @@ export const quintRun = <S, E, R>(
         traceIndex,
         driver,
         config,
-        opts.compareState,
-        opts.deserializeState
+        opts.stateCheck,
+        seed
       )
       tracesReplayed++
     }
 
-    return { tracesReplayed }
+    return { tracesReplayed, seed }
   })

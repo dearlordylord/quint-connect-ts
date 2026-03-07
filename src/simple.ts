@@ -23,8 +23,10 @@ export type SimpleDriver<S> = {
 
 export type SimpleRunOptions<S> = RunOptions & {
   readonly createDriver: () => SimpleDriver<S> | Promise<SimpleDriver<S>>
-  readonly compareState: (spec: S, impl: S) => boolean
-  readonly deserializeState: (raw: unknown) => S
+  readonly stateCheck?: {
+    readonly compareState: (spec: S, impl: S) => boolean
+    readonly deserializeState: (raw: unknown) => S
+  } | undefined
 }
 
 const wrapDriver = <S>(simple: SimpleDriver<S>): Driver<S> => ({
@@ -36,7 +38,7 @@ const wrapDriver = <S>(simple: SimpleDriver<S>): Driver<S> => ({
   ...(simple.config !== undefined ? { config: simple.config } : {})
 })
 
-export const run = <S>(opts: SimpleRunOptions<S>): Promise<{ readonly tracesReplayed: number }> => {
+export const run = <S>(opts: SimpleRunOptions<S>): Promise<{ readonly tracesReplayed: number; readonly seed: string }> => {
   const program = quintRun({
     spec: opts.spec,
     seed: opts.seed,
@@ -49,8 +51,15 @@ export const run = <S>(opts: SimpleRunOptions<S>): Promise<{ readonly tracesRepl
     driverFactory: {
       create: () => Effect.promise(async () => wrapDriver(await Promise.resolve(opts.createDriver())))
     },
-    compareState: opts.compareState,
-    deserializeState: (raw) => Effect.sync(() => opts.deserializeState(raw))
+    stateCheck: opts.stateCheck !== undefined
+      ? (() => {
+        const { compareState, deserializeState } = opts.stateCheck
+        return {
+          compareState,
+          deserializeState: (raw: unknown) => Effect.sync(() => deserializeState(raw))
+        }
+      })()
+      : undefined
   })
 
   return Effect.runPromise(

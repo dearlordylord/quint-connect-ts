@@ -8,10 +8,12 @@ export interface Step {
 
 export interface Config {
   readonly statePath: ReadonlyArray<string>
+  readonly nondetPath: ReadonlyArray<string>
 }
 
 export const defaultConfig: Config = {
-  statePath: []
+  statePath: [],
+  nondetPath: []
 }
 
 export interface Driver<S, E = never, R = never> {
