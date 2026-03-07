@@ -37,7 +37,7 @@ Dual entry points: `@firfi/quint-connect` (simple) and `@firfi/quint-connect/eff
 
 ## Key Design Decisions
 
-- **Backend**: `--backend typescript` by default (zero extra deps)
+- **Backend**: No `--backend` flag by default (inherits quint CLI default = `rust`). `--backend typescript` has a known bug with non-disjunctive step actions.
 - **State comparison**: Full comparison after every step (Rust feature parity)
 - **Framework-agnostic**: Throws on failure, works with any test runner
 - **Temp directory**: Effect-managed scoped resource, auto-cleanup

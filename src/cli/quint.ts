@@ -43,13 +43,14 @@ const buildRunArgs = (
     "run",
     opts.spec,
     "--mbt",
-    "--backend",
-    opts.backend ?? "typescript",
     "--n-traces",
     String(nTraces),
     "--out-itf",
     `${outDir}/trace_{seq}.itf.json`
   ]
+  if (opts.backend !== undefined) {
+    args.push("--backend", opts.backend)
+  }
   if (opts.seed !== undefined) {
     args.push("--seed", opts.seed)
   }

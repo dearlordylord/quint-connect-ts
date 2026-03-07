@@ -3,7 +3,7 @@ import { describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import * as path from "node:path"
 import { expect } from "vitest"
-import type { Driver, Step } from "../src/driver/types.js"
+import type { Config, Driver, Step } from "../src/driver/types.js"
 import { pickFrom } from "../src/itf/picks.js"
 import { ITFBigInt } from "../src/itf/schema.js"
 import { quintRun } from "../src/runner/runner.js"
@@ -115,6 +115,65 @@ describe("Integration: counter spec", () => {
         seed: "1",
         driverFactory: {
           create: () => Effect.succeed(createStatelessCounterDriver())
+        }
+      })
+
+      expect(result.tracesReplayed).toBeGreaterThan(0)
+      expect(result.seed).toBe("1")
+    }).pipe(
+      Effect.provide(NodeContext.layer),
+      Effect.scoped
+    ), { timeout: 30000 })
+})
+
+type NestedState = { readonly count: bigint }
+
+const NestedStateSchema = Schema.Struct({
+  count: ITFBigInt
+})
+
+const nestedConfig: Config = {
+  statePath: ["routingState"],
+  nondetPath: []
+}
+
+const createNestedDriver = (): Driver<NestedState> => {
+  let count = 0n
+  return {
+    step: (step: Step) =>
+      Effect.gen(function*() {
+        switch (step.action) {
+          case "Increment": {
+            const amount = yield* pickFrom(step, "amount", ITFBigInt)
+            if (amount !== undefined) {
+              count = count + amount
+            }
+            break
+          }
+          default:
+            break
+        }
+      }),
+    getState: () => Effect.succeed({ count }),
+    config: () => nestedConfig
+  }
+}
+
+describe("Integration: nested state spec with statePath", () => {
+  it.effect("replays traces using statePath to extract nested state", () =>
+    Effect.gen(function*() {
+      const result = yield* quintRun({
+        spec: path.join(specDir, "nested.qnt"),
+        nTraces: 3,
+        maxSamples: 3,
+        maxSteps: 5,
+        seed: "1",
+        driverFactory: {
+          create: () => Effect.succeed(createNestedDriver())
+        },
+        stateCheck: {
+          compareState: (spec: NestedState, impl: NestedState) => spec.count === impl.count,
+          deserializeState: (raw) => Schema.decodeUnknown(NestedStateSchema)(raw).pipe(Effect.orDie)
         }
       })
 

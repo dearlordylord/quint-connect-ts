@@ -1,5 +1,14 @@
 # @firfi/quint-connect
 
+## 0.2.1
+
+### Patch Changes
+
+- Stop forcing `--backend typescript` by default — inherit quint CLI default (`rust`). This avoids a Quint bug where `--backend typescript` corrupts `mbt::actionTaken` for non-disjunctive step actions (all states show `"init"` instead of the actual action name).
+- Add `statePath` integration test with nested state spec (`routingState` record variable).
+- Document deterministic spec config (`nTraces: 1, maxSamples: 1`), `statePath` semantics, backend known issues, and missing RunOptions fields in README.
+- Add `BUG_REPORT.md` with full root cause analysis and fix for the Quint TypeScript backend bug.
+
 ## 0.2.0
 
 ### Minor Changes
