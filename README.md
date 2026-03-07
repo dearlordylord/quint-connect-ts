@@ -2,7 +2,7 @@
 
 Model-based testing framework connecting [Quint](https://github.com/informalsystems/quint) specifications to TypeScript implementations. The TypeScript equivalent of [quint-connect](https://github.com/informalsystems/quint-connect) (Rust).
 
-Spawns `quint run --mbt`, parses ITF traces, replays them through a user-implemented driver, and compares spec state against implementation state after every step.
+Spawns `quint run --mbt`, parses ITF traces, replays them through a user-implemented driver, and optionally compares spec state against implementation state after every step.
 
 ## Install
 
@@ -48,16 +48,22 @@ const createDriver = () => {
   }
 }
 
-await run({
+const result = await run({
   spec: "./counter.qnt",
   nTraces: 10,
   maxSteps: 20,
   seed: "1",
   createDriver,
-  compareState: (spec: CounterState, impl: CounterState) => spec.count === impl.count,
-  deserializeState: (raw) => ({ count: decodeBigInt((raw as any).count) })
+  stateCheck: {
+    compareState: (spec: CounterState, impl: CounterState) => spec.count === impl.count,
+    deserializeState: (raw) => ({ count: decodeBigInt((raw as any).count) })
+  }
 })
+
+console.log(result.tracesReplayed, result.seed)
 ```
+
+State checking is optional -- omit `stateCheck` for smoke-testing (verifying the driver doesn't crash on spec actions).
 
 ### Effect API
 
@@ -91,27 +97,31 @@ const program = quintRun({
   maxSteps: 20,
   seed: "1",
   driverFactory: { create: () => Effect.succeed(createDriver()) },
-  compareState: (spec, impl) => spec.count === impl.count,
-  deserializeState: (raw) => Schema.decodeUnknown(CounterState)(raw).pipe(Effect.orDie)
+  stateCheck: {
+    compareState: (spec, impl) => spec.count === impl.count,
+    deserializeState: (raw) => Schema.decodeUnknown(CounterState)(raw).pipe(Effect.orDie)
+  }
 })
 
-await Effect.runPromise(
+const result = await Effect.runPromise(
   program.pipe(Effect.provide(NodeContext.layer))
 )
+
+console.log(result.tracesReplayed, result.seed)
 ```
 
 ## API
 
 ### Simple API (`@firfi/quint-connect`)
 
-- **`run(opts)`** -- generate traces and replay them through a driver. Returns `Promise<{ tracesReplayed }>`.
+- **`run(opts)`** -- generate traces and replay them through a driver. Returns `Promise<{ tracesReplayed, seed }>`.
 - **`pick(step, key)`** -- extract a nondet pick, unwrapping Quint's Option encoding. Returns `unknown | undefined`.
 - **`pick(step, key, decode)`** -- same, but applies `decode` to the raw value. Returns `A | undefined`.
 - **`decodeBigInt`**, **`decodeSet(raw, decodeItem)`**, **`decodeMap(raw, decodeKey, decodeValue)`** -- sync ITF type decoders.
 
 ### Effect API (`@firfi/quint-connect/effect`)
 
-- **`quintRun(opts)`** -- generate traces via `quint run --mbt` and replay them through a driver. Returns `Effect<{ tracesReplayed }>`.
+- **`quintRun(opts)`** -- generate traces via `quint run --mbt` and replay them through a driver. Returns `Effect<{ tracesReplayed, seed }>`.
 - **`generateTraces(opts)`** -- just spawn quint and parse ITF traces without replaying.
 - **`pickFrom(step, key, schema)`** -- extract a nondet pick from a step using an Effect Schema.
 - **`ItfOption(schema)`** -- Effect Schema that decodes Quint's Option variant to `A | undefined`.
@@ -124,7 +134,7 @@ Shared by `run`, `quintRun`, and `generateTraces`:
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `spec` | `string` | *required* | Path to the `.qnt` spec file |
-| `seed` | `string` | random | RNG seed for reproducible runs |
+| `seed` | `string` | random | RNG seed for reproducible runs. Also reads `QUINT_SEED` env var. |
 | `nTraces` | `number` | `100` | Number of traces to generate |
 | `maxSteps` | `number` | quint default | Maximum steps per trace |
 | `maxSamples` | `number` | quint default | Maximum samples before giving up on finding a valid step |
@@ -132,22 +142,28 @@ Shared by `run`, `quintRun`, and `generateTraces`:
 | `step` | `string` | quint default | Name of the step action |
 | `main` | `string` | quint default | Name of the main module |
 
-`run` additionally requires:
+`run` additionally accepts:
 
 | Field | Type | Description |
 |---|---|---|
 | `createDriver` | `() => SimpleDriver<S>` | Creates a fresh driver per trace |
-| `compareState` | `(spec: S, impl: S) => boolean` | Compares spec state against implementation state |
-| `deserializeState` | `(raw: unknown) => S` | Decodes raw ITF state into your typed state |
+| `stateCheck` | `{ compareState, deserializeState }` | Optional. Compare spec vs impl state after each step |
 
-`quintRun` additionally requires:
+`quintRun` additionally accepts:
 
 | Field | Type | Description |
 |---|---|---|
 | `driverFactory` | `DriverFactory<S, E, R>` | Creates a fresh driver per trace |
-| `compareState` | `(spec: S, impl: S) => boolean` | Compares spec state against implementation state |
-| `deserializeState` | `(raw: unknown) => Effect<S>` | Decodes raw ITF state into your typed state |
+| `stateCheck` | `{ compareState, deserializeState }` | Optional. Compare spec vs impl state after each step |
 
+### Config
+
+Drivers can optionally return a `Config` from `config()`:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `statePath` | `string[]` | `[]` | Nested path to the state object within the raw ITF state |
+| `nondetPath` | `string[]` | `[]` | Nested path to a sum-type action encoding (Choreo-style specs) |
 
 ## License
 
