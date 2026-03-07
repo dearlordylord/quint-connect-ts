@@ -27,6 +27,7 @@ export type SimpleRunOptions<S> = RunOptions & {
     readonly compareState: (spec: S, impl: S) => boolean
     readonly deserializeState: (raw: unknown) => S
   } | undefined
+  readonly concurrency?: number | undefined
 }
 
 const wrapDriver = <S>(simple: SimpleDriver<S>): Driver<S> => ({
@@ -53,6 +54,7 @@ export const run = <S>(
     invariants: opts.invariants,
     witnesses: opts.witnesses,
     backend: opts.backend,
+    concurrency: opts.concurrency,
     driverFactory: {
       create: () => Effect.promise(async () => wrapDriver(await Promise.resolve(opts.createDriver())))
     },
