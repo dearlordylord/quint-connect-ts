@@ -148,7 +148,6 @@ Shared by `run`, `quintRun`, and `generateTraces`:
 | `compareState` | `(spec: S, impl: S) => boolean` | Compares spec state against implementation state |
 | `deserializeState` | `(raw: unknown) => Effect<S>` | Decodes raw ITF state into your typed state |
 
-See [SPEC.md](SPEC.md) for design rationale and architecture.
 
 ## License
 
