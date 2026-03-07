@@ -132,6 +132,15 @@ const replayTrace = <S, E, R>(
       )
 
       if (stateCheck !== undefined) {
+        if (driver.getState === undefined) {
+          return yield* new TraceReplayError({
+            message:
+              "stateCheck is provided but driver.getState is not defined; getState is required when stateCheck is provided",
+            traceIndex,
+            stepIndex,
+            action: step.action
+          })
+        }
         const specStateRaw = config.statePath.length > 0
           ? resolveNestedValue(rawState, config.statePath)
           : rawState
