@@ -81,20 +81,20 @@ export const generateTraces = (
     )
     const args = buildRunArgs(opts, tmpDir)
     const cmd = Command.make("npx", "@informalsystems/quint", ...args)
-    const process = yield* Effect.mapError(
+    const proc = yield* Effect.mapError(
       Command.start(cmd),
       (e) => new QuintNotFoundError({ message: `Failed to start quint: ${e}` })
     )
-    const exitCode = yield* Effect.mapError(
-      process.exitCode,
+    const decoder = new TextDecoder()
+    const [exitCode, , stderr] = yield* Effect.mapError(
+      Effect.all([
+        proc.exitCode,
+        Stream.runDrain(proc.stdout),
+        Stream.runFold(proc.stderr, "", (acc, chunk) => acc + decoder.decode(chunk))
+      ], { concurrency: "unbounded" }),
       (e) => new QuintError({ message: `quint process error: ${e}` })
     )
     if (exitCode !== 0) {
-      const decoder = new TextDecoder()
-      const stderr = yield* Effect.mapError(
-        Stream.runFold(process.stderr, "", (acc, chunk) => acc + decoder.decode(chunk)),
-        (e) => new QuintError({ message: `Failed to read stderr: ${e}` })
-      )
       return yield* new QuintError({
         message: `quint run failed with exit code ${exitCode}`,
         stderr,
