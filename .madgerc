@@ -1,0 +1,9 @@
+{
+  "tsConfig": "tsconfig.json",
+  "detectiveOptions": {
+    "ts": {
+      "skipTypeImports": true
+    }
+  },
+  "excludeRegExp": ["node_modules", "dist"]
+}

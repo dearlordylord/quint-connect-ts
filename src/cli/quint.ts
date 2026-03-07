@@ -1,0 +1,124 @@
+import * as Command from "@effect/platform/Command"
+import type * as CommandExecutor from "@effect/platform/CommandExecutor"
+import * as FileSystem from "@effect/platform/FileSystem"
+import * as Path from "@effect/platform/Path"
+import { Effect, Schema, Stream } from "effect"
+import { ItfTrace } from "../itf/schema.js"
+
+export class QuintError extends Schema.TaggedError<QuintError>()("QuintError", {
+  message: Schema.String,
+  stderr: Schema.String,
+  exitCode: Schema.Number
+}) {}
+
+export class QuintNotFoundError extends Schema.TaggedError<QuintNotFoundError>()("QuintNotFoundError", {
+  message: Schema.String
+}) {}
+
+export interface RunOptions {
+  readonly spec: string
+  readonly seed?: string | undefined
+  readonly nTraces?: number | undefined
+  readonly maxSteps?: number | undefined
+  readonly maxSamples?: number | undefined
+  readonly init?: string | undefined
+  readonly step?: string | undefined
+  readonly main?: string | undefined
+}
+
+const DEFAULT_N_TRACES = 100
+
+const buildRunArgs = (
+  opts: RunOptions,
+  outDir: string
+): Array<string> => {
+  const nTraces = opts.nTraces ?? DEFAULT_N_TRACES
+  const args: Array<string> = [
+    "run",
+    opts.spec,
+    "--mbt",
+    "--backend",
+    "typescript",
+    "--n-traces",
+    String(nTraces),
+    "--out-itf",
+    `${outDir}/trace_{seq}.itf.json`
+  ]
+  if (opts.seed !== undefined) {
+    args.push("--seed", opts.seed)
+  }
+  if (opts.maxSteps !== undefined) {
+    args.push("--max-steps", String(opts.maxSteps))
+  }
+  if (opts.maxSamples !== undefined) {
+    args.push("--max-samples", String(opts.maxSamples))
+  }
+  if (opts.init !== undefined) {
+    args.push("--init", opts.init)
+  }
+  if (opts.step !== undefined) {
+    args.push("--step", opts.step)
+  }
+  if (opts.main !== undefined) {
+    args.push("--main", opts.main)
+  }
+  return args
+}
+
+export const generateTraces = (
+  opts: RunOptions
+): Effect.Effect<
+  ReadonlyArray<ItfTrace>,
+  QuintError | QuintNotFoundError,
+  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const tmpDir = yield* Effect.mapError(
+      fs.makeTempDirectoryScoped(),
+      (e) => new QuintError({ message: `Failed to create temp directory: ${e}`, stderr: "", exitCode: 0 })
+    )
+    const args = buildRunArgs(opts, tmpDir)
+    const cmd = Command.make("npx", "@informalsystems/quint", ...args)
+    const process = yield* Effect.mapError(
+      Command.start(cmd),
+      (e) => new QuintNotFoundError({ message: `Failed to start quint: ${e}` })
+    )
+    const exitCode = yield* Effect.mapError(
+      process.exitCode,
+      (e) => new QuintError({ message: `quint process error: ${e}`, stderr: "", exitCode: -1 })
+    )
+    if (exitCode !== 0) {
+      const stderr = yield* Effect.mapError(
+        Stream.runFold(process.stderr, "", (acc, chunk) => acc + new TextDecoder().decode(chunk)),
+        (e) => new QuintError({ message: `Failed to read stderr: ${e}`, stderr: "", exitCode })
+      )
+      return yield* new QuintError({
+        message: `quint run failed with exit code ${exitCode}`,
+        stderr,
+        exitCode
+      })
+    }
+    const files = yield* Effect.mapError(
+      fs.readDirectory(tmpDir),
+      (e) => new QuintError({ message: `Failed to read trace directory: ${e}`, stderr: "", exitCode: 0 })
+    )
+    const traceFiles = files
+      .filter((f: string) => f.endsWith(".itf.json"))
+      .sort()
+    const traces: Array<ItfTrace> = []
+    for (const file of traceFiles) {
+      const content = yield* Effect.mapError(
+        fs.readFileString(path.join(tmpDir, file)),
+        (e) => new QuintError({ message: `Failed to read trace file ${file}: ${e}`, stderr: "", exitCode: 0 })
+      )
+      const json: unknown = JSON.parse(content)
+      const trace = yield* Effect.mapError(
+        Schema.decodeUnknown(ItfTrace)(json),
+        (e) => new QuintError({ message: `Failed to parse ITF trace ${file}: ${e}`, stderr: "", exitCode: 0 })
+      )
+      traces.push(trace)
+    }
+    return traces
+  }).pipe(Effect.scoped)

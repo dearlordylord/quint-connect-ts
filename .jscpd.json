@@ -1,0 +1,7 @@
+{
+  "threshold": 2,
+  "reporters": ["console"],
+  "ignore": ["**/node_modules/**", "**/dist/**", "**/.reference/**"],
+  "format": ["typescript"],
+  "gitignore": true
+}

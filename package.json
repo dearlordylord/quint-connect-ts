@@ -1,0 +1,82 @@
+{
+  "name": "@firfi/quint-connect",
+  "version": "0.0.1",
+  "description": "Model-based testing framework connecting Quint specifications to TypeScript implementations",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dearlordylord/quint-connect.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dearlordylord/quint-connect/issues"
+  },
+  "homepage": "https://github.com/dearlordylord/quint-connect#readme",
+  "scripts": {
+    "prepare": "husky",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit 2>&1 | { grep -E '^(src/|test/)' && exit 1 || exit 0; }",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "lint": "eslint src test --ext .ts && jscpd src",
+    "lint:fix": "eslint src test --ext .ts --fix",
+    "circular": "madge --extensions ts --circular src"
+  },
+  "keywords": [
+    "quint",
+    "model-based-testing",
+    "formal-methods",
+    "formal-verification",
+    "specification",
+    "testing",
+    "itf",
+    "effect"
+  ],
+  "packageManager": "pnpm@10.29.3",
+  "author": "",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@effect/platform": "^0.94.5",
+    "@effect/platform-node": "^0.104.1",
+    "effect": "^3.19.15"
+  },
+  "lint-staged": {
+    "*.ts": "eslint --fix"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "unrs-resolver"
+    ]
+  },
+  "devDependencies": {
+    "@effect/eslint-plugin": "^0.3.2",
+    "@effect/language-service": "^0.73.1",
+    "@effect/vitest": "latest",
+    "@eslint/compat": "^2.0.2",
+    "@types/node": "^25.1.0",
+    "@typescript-eslint/parser": "^8.54.0",
+    "eslint": "^9.39.2",
+    "eslint-import-resolver-typescript": "^4.4.4",
+    "eslint-plugin-functional": "^9.0.2",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-import-x": "^4.16.1",
+    "eslint-plugin-simple-import-sort": "^12.1.1",
+    "eslint-plugin-sort-destructure-keys": "^2.0.0",
+    "husky": "^9.1.7",
+    "jscpd": "^4.0.8",
+    "lint-staged": "^16.2.7",
+    "madge": "^8.0.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.54.0",
+    "vitest": "latest"
+  }
+}
