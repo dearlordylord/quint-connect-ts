@@ -33,4 +33,4 @@
 - [ ] Invariant checking — pass `--invariants` to quint run
 - [ ] Witness reporting — pass `--witnesses` to quint run
 - [ ] CI example — GitHub Actions workflow for MBT
-- [ ] ADR-015 full compliance — verify all ITF value types are handled (variants, unserializable)
+- [x] ADR-015 full compliance — verify all ITF value types are handled (variants, unserializable)
