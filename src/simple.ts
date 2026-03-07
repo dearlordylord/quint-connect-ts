@@ -69,6 +69,20 @@ export const run = <S>(
   )
 }
 
+// --- Option unwrap helpers ---
+
+const unwrapOption = (raw: unknown): unknown => {
+  if (Predicate.isRecord(raw) && "tag" in raw) {
+    if (raw["tag"] === "Some" && "value" in raw) {
+      return raw["value"]
+    }
+    if (raw["tag"] === "None") {
+      return undefined
+    }
+  }
+  return raw
+}
+
 // --- pick: sync Option unwrap ---
 
 export function pick(step: Step, key: string): unknown | undefined
@@ -76,19 +90,28 @@ export function pick<A>(step: Step, key: string, decode: (raw: unknown) => A): A
 export function pick<A>(step: Step, key: string, decode?: (raw: unknown) => A): A | unknown | undefined {
   const raw = step.nondetPicks.get(key)
   if (raw === undefined) return undefined
-  let value: unknown
-  if (Predicate.isRecord(raw) && "tag" in raw) {
-    if (raw["tag"] === "Some" && "value" in raw) {
-      value = raw["value"]
-    } else if (raw["tag"] === "None") {
-      return undefined
-    } else {
-      value = raw
-    }
-  } else {
-    value = raw
-  }
+  const value = unwrapOption(raw)
+  if (value === undefined) return undefined
   return decode !== undefined ? decode(value) : value
+}
+
+// --- pickAll: sync batch Option unwrap ---
+
+/**
+ * Extract all nondet picks at once with a sync decoder.
+ *
+ * Converts the step's nondetPicks map to a plain object, unwrapping
+ * Quint Option variants (Some -> inner value, None -> undefined),
+ * then passes the result to the user's decode function.
+ */
+export const pickAll = <A>(
+  step: Step,
+  decode: (raw: Record<string, unknown>) => A
+): A => {
+  const unwrapped = Object.fromEntries(
+    Array.from(step.nondetPicks, ([key, value]) => [key, unwrapOption(value)])
+  )
+  return decode(unwrapped)
 }
 
 // --- Sync ITF decoders (wrap Effect schemas) ---
