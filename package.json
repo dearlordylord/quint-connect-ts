@@ -23,12 +23,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dearlordylord/quint-connect.git"
+    "url": "git+https://github.com/dearlordylord/quint-connect-ts.git"
   },
   "bugs": {
-    "url": "https://github.com/dearlordylord/quint-connect/issues"
+    "url": "https://github.com/dearlordylord/quint-connect-ts/issues"
   },
-  "homepage": "https://github.com/dearlordylord/quint-connect#readme",
+  "homepage": "https://github.com/dearlordylord/quint-connect-ts#readme",
   "scripts": {
     "prepare": "husky",
     "build": "tsc -p tsconfig.build.json",
