@@ -39,6 +39,22 @@ const createCounterDriver = (): Driver<CounterState> => {
   }
 }
 
+const createStatelessCounterDriver = (): Driver<unknown> => ({
+  step: (step: Step) =>
+    Effect.gen(function*() {
+      switch (step.action) {
+        case "Increment": {
+          yield* pickFrom(step, "amount", ITFBigInt)
+          break
+        }
+        case "init":
+          break
+        default:
+          break
+      }
+    })
+})
+
 describe("Integration: counter spec", () => {
   it.effect("replays traces from quint run against a TS driver", () =>
     Effect.gen(function*() {
@@ -79,6 +95,26 @@ describe("Integration: counter spec", () => {
         stateCheck: {
           compareState: (spec: CounterState, impl: CounterState) => spec.count === impl.count,
           deserializeState: (raw) => Schema.decodeUnknown(CounterStateSchema)(raw).pipe(Effect.orDie)
+        }
+      })
+
+      expect(result.tracesReplayed).toBeGreaterThan(0)
+      expect(result.seed).toBe("1")
+    }).pipe(
+      Effect.provide(NodeContext.layer),
+      Effect.scoped
+    ), { timeout: 30000 })
+
+  it.effect("replays traces without stateCheck and without getState", () =>
+    Effect.gen(function*() {
+      const result = yield* quintRun({
+        spec: path.join(specDir, "counter.qnt"),
+        nTraces: 3,
+        maxSamples: 3,
+        maxSteps: 5,
+        seed: "1",
+        driverFactory: {
+          create: () => Effect.succeed(createStatelessCounterDriver())
         }
       })
 

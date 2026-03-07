@@ -17,7 +17,7 @@
 
 - [ ] `quint test` support — blocked on quint issue #1842 (--mbt flag for quint test)
 - [x] Backend choice — add `--backend rust` option (faster but requires quint rust evaluator binary)
-- [ ] Opt-in state comparison — allow drivers to skip state validation
+- [x] Opt-in state comparison — allow drivers to skip state validation
 - [x] Concurrent trace replay — parallelize via Effect fiber concurrency (`concurrency` option on `QuintRunOptions` / `SimpleRunOptions`)
 - [ ] Typed nondet picks — effect/Schema-based per-action pick extraction:
   ```ts

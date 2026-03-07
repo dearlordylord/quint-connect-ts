@@ -17,7 +17,7 @@ export { NoTracesError, StateMismatchError, TraceReplayError } from "./runner/ru
 
 export type SimpleDriver<S> = {
   readonly step: (step: Step) => void | Promise<void>
-  readonly getState: () => S
+  readonly getState?: () => S
   readonly config?: () => Config
 }
 
@@ -30,14 +30,17 @@ export type SimpleRunOptions<S> = RunOptions & {
   readonly concurrency?: number | undefined
 }
 
-const wrapDriver = <S>(simple: SimpleDriver<S>): Driver<S> => ({
-  step: (s: Step) =>
-    Effect.promise(async () => {
-      await Promise.resolve(simple.step(s))
-    }),
-  getState: () => Effect.sync(() => simple.getState()),
-  ...(simple.config !== undefined ? { config: simple.config } : {})
-})
+const wrapDriver = <S>(simple: SimpleDriver<S>): Driver<S> => {
+  const simpleGetState = simple.getState
+  return {
+    step: (s: Step) =>
+      Effect.promise(async () => {
+        await Promise.resolve(simple.step(s))
+      }),
+    ...(simpleGetState !== undefined ? { getState: () => Effect.sync(simpleGetState) } : {}),
+    ...(simple.config !== undefined ? { config: simple.config } : {})
+  }
+}
 
 export const run = <S>(
   opts: SimpleRunOptions<S>

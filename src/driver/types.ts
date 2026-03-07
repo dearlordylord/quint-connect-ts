@@ -18,7 +18,7 @@ export const defaultConfig: Config = {
 
 export interface Driver<S, E = never, R = never> {
   readonly step: (step: Step) => Effect.Effect<void, E, R>
-  readonly getState: () => Effect.Effect<S, E, R>
+  readonly getState?: () => Effect.Effect<S, E, R>
   readonly config?: () => Config
 }
 
