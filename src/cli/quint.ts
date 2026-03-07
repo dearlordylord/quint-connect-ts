@@ -3,6 +3,7 @@ import type * as CommandExecutor from "@effect/platform/CommandExecutor"
 import * as FileSystem from "@effect/platform/FileSystem"
 import * as Path from "@effect/platform/Path"
 import { Effect, Schema, Stream } from "effect"
+import type { Scope } from "effect"
 import { ItfTrace } from "../itf/schema.js"
 
 export class QuintError extends Schema.TaggedError<QuintError>()("QuintError", {
@@ -28,6 +29,7 @@ export interface RunOptions {
   readonly witnesses?: ReadonlyArray<string> | undefined
   readonly backend?: "typescript" | "rust" | undefined
   readonly verbose?: boolean | undefined
+  readonly traceDir?: string | undefined
 }
 
 const DEFAULT_N_TRACES = 100
@@ -79,21 +81,18 @@ const buildRunArgs = (
   return args
 }
 
-export const generateTraces = (
-  opts: RunOptions
+const runAndReadTraces = (
+  opts: RunOptions,
+  outDir: string
 ): Effect.Effect<
   ReadonlyArray<ItfTrace>,
   QuintError | QuintNotFoundError,
-  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor | Scope.Scope
 > =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const tmpDir = yield* Effect.mapError(
-      fs.makeTempDirectoryScoped(),
-      (e) => new QuintError({ message: `Failed to create temp directory: ${e}` })
-    )
-    const args = buildRunArgs(opts, tmpDir)
+    const args = buildRunArgs(opts, outDir)
     const baseCmd = Command.make("npx", "@informalsystems/quint", ...args)
     const cmd = opts.verbose === true ? Command.env(baseCmd, { QUINT_VERBOSE: "true" }) : baseCmd
     const proc = yield* Effect.mapError(
@@ -117,7 +116,7 @@ export const generateTraces = (
       })
     }
     const files = yield* Effect.mapError(
-      fs.readDirectory(tmpDir),
+      fs.readDirectory(outDir),
       (e) => new QuintError({ message: `Failed to read trace directory: ${e}` })
     )
     const traceFiles = files
@@ -126,7 +125,7 @@ export const generateTraces = (
     const traces: Array<ItfTrace> = []
     for (const file of traceFiles) {
       const content = yield* Effect.mapError(
-        fs.readFileString(path.join(tmpDir, file)),
+        fs.readFileString(path.join(outDir, file)),
         (e) => new QuintError({ message: `Failed to read trace file ${file}: ${e}` })
       )
       const json: unknown = yield* Effect.try({
@@ -140,4 +139,48 @@ export const generateTraces = (
       traces.push(trace)
     }
     return traces
+  })
+
+const generateTracesWithTraceDir = (
+  opts: RunOptions,
+  traceDir: string
+): Effect.Effect<
+  ReadonlyArray<ItfTrace>,
+  QuintError | QuintNotFoundError,
+  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    yield* Effect.mapError(
+      fs.makeDirectory(traceDir, { recursive: true }),
+      (e) => new QuintError({ message: `Failed to create trace directory: ${e}` })
+    )
+    return yield* runAndReadTraces(opts, traceDir)
   }).pipe(Effect.scoped)
+
+const generateTracesWithTempDir = (
+  opts: RunOptions
+): Effect.Effect<
+  ReadonlyArray<ItfTrace>,
+  QuintError | QuintNotFoundError,
+  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const tmpDir = yield* Effect.mapError(
+      fs.makeTempDirectoryScoped(),
+      (e) => new QuintError({ message: `Failed to create temp directory: ${e}` })
+    )
+    return yield* runAndReadTraces(opts, tmpDir)
+  }).pipe(Effect.scoped)
+
+export const generateTraces = (
+  opts: RunOptions
+): Effect.Effect<
+  ReadonlyArray<ItfTrace>,
+  QuintError | QuintNotFoundError,
+  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+> =>
+  opts.traceDir !== undefined
+    ? generateTracesWithTraceDir(opts, opts.traceDir)
+    : generateTracesWithTempDir(opts)

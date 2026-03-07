@@ -56,6 +56,7 @@ export const run = <S>(
     backend: opts.backend,
     concurrency: opts.concurrency,
     verbose: opts.verbose,
+    traceDir: opts.traceDir,
     driverFactory: {
       create: () => Effect.promise(async () => wrapDriver(await Promise.resolve(opts.createDriver())))
     },
