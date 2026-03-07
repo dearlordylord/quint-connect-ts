@@ -30,7 +30,7 @@
   ```
 - [ ] Vitest integration — optional helper generating `test()` calls from traces
 - [ ] Trace persistence — `--trace-dir` option to keep ITF files for debugging
-- [ ] Invariant checking — pass `--invariants` to quint run
-- [ ] Witness reporting — pass `--witnesses` to quint run
+- [x] Invariant checking — pass `--invariant` to quint run
+- [x] Witness reporting — pass `--witness` to quint run
 - [ ] CI example — GitHub Actions workflow for MBT
 - [ ] ADR-015 full compliance — verify all ITF value types are handled (variants, unserializable)

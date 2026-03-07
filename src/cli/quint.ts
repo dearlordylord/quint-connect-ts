@@ -24,6 +24,8 @@ export interface RunOptions {
   readonly init?: string | undefined
   readonly step?: string | undefined
   readonly main?: string | undefined
+  readonly invariants?: ReadonlyArray<string> | undefined
+  readonly witnesses?: ReadonlyArray<string> | undefined
 }
 
 const DEFAULT_N_TRACES = 100
@@ -61,6 +63,16 @@ const buildRunArgs = (
   }
   if (opts.main !== undefined) {
     args.push("--main", opts.main)
+  }
+  if (opts.invariants !== undefined) {
+    for (const inv of opts.invariants) {
+      args.push("--invariant", inv)
+    }
+  }
+  if (opts.witnesses !== undefined) {
+    for (const wit of opts.witnesses) {
+      args.push("--witness", wit)
+    }
   }
   return args
 }
