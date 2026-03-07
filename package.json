@@ -1,6 +1,6 @@
 {
   "name": "@firfi/quint-connect",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Model-based testing framework connecting Quint specifications to TypeScript implementations",
   "type": "module",
   "main": "./dist/index.js",
@@ -38,7 +38,11 @@
     "test:watch": "vitest",
     "lint": "eslint src test --ext .ts && jscpd src",
     "lint:fix": "eslint src test --ext .ts --fix",
-    "circular": "madge --extensions ts --circular src"
+    "check-format": "eslint src test --ext .ts --rule '@effect/dprint: error'",
+    "ci": "pnpm build && pnpm typecheck && pnpm lint && pnpm test",
+    "circular": "madge --extensions ts --circular src",
+    "local-release": "changeset version && changeset publish",
+    "prepublishOnly": "pnpm ci"
   },
   "keywords": [
     "quint",
@@ -51,7 +55,7 @@
     "effect"
   ],
   "packageManager": "pnpm@10.29.3",
-  "author": "",
+  "author": "dearlordylord",
   "license": "Apache-2.0",
   "dependencies": {
     "@effect/platform": "^0.94.5",
@@ -69,6 +73,7 @@
     ]
   },
   "devDependencies": {
+    "@changesets/cli": "^2.30.0",
     "@effect/eslint-plugin": "^0.3.2",
     "@effect/language-service": "^0.73.1",
     "@effect/vitest": "latest",
