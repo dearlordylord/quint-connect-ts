@@ -32,5 +32,5 @@
 - [ ] Trace persistence — `--trace-dir` option to keep ITF files for debugging
 - [x] Invariant checking — pass `--invariant` to quint run
 - [x] Witness reporting — pass `--witness` to quint run
-- [ ] CI example — GitHub Actions workflow for MBT
+- [x] CI example — GitHub Actions workflow for MBT
 - [ ] ADR-015 full compliance — verify all ITF value types are handled (variants, unserializable)
