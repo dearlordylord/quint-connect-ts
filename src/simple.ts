@@ -38,7 +38,9 @@ const wrapDriver = <S>(simple: SimpleDriver<S>): Driver<S> => ({
   ...(simple.config !== undefined ? { config: simple.config } : {})
 })
 
-export const run = <S>(opts: SimpleRunOptions<S>): Promise<{ readonly tracesReplayed: number; readonly seed: string }> => {
+export const run = <S>(
+  opts: SimpleRunOptions<S>
+): Promise<{ readonly tracesReplayed: number; readonly seed: string }> => {
   const program = quintRun({
     spec: opts.spec,
     seed: opts.seed,

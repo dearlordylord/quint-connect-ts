@@ -70,12 +70,14 @@ const extractFromNondetPath = (
 ): Effect.Effect<{ action: string; nondetPicks: ReadonlyMap<string, unknown> }, TraceReplayError> => {
   const raw = resolveNestedValue(state, nondetPath)
   if (!Predicate.isRecord(raw) || typeof raw["tag"] !== "string") {
-    return Effect.fail(new TraceReplayError({
-      message: `Expected sum type {tag, value} at path ${nondetPath.join(".")}, got: ${JSON.stringify(raw)}`,
-      traceIndex,
-      stepIndex,
-      action: "unknown"
-    }))
+    return Effect.fail(
+      new TraceReplayError({
+        message: `Expected sum type {tag, value} at path ${nondetPath.join(".")}, got: ${JSON.stringify(raw)}`,
+        traceIndex,
+        stepIndex,
+        action: "unknown"
+      })
+    )
   }
   const action = raw["tag"]
   const value = raw["value"]
@@ -138,7 +140,8 @@ const replayTrace = <S, E, R>(
 
         if (!stateCheck.compareState(specState, implState)) {
           return yield* new StateMismatchError({
-            message: `State mismatch at trace ${traceIndex}, step ${stepIndex}, action "${step.action}" (seed: ${seed})`,
+            message:
+              `State mismatch at trace ${traceIndex}, step ${stepIndex}, action "${step.action}" (seed: ${seed})`,
             traceIndex,
             stepIndex,
             expected: specState,
