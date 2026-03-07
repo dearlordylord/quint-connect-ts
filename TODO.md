@@ -19,7 +19,7 @@
 - [x] Backend choice — add `--backend rust` option (faster but requires quint rust evaluator binary)
 - [x] Opt-in state comparison — allow drivers to skip state validation
 - [x] Concurrent trace replay — parallelize via Effect fiber concurrency (`concurrency` option on `QuintRunOptions` / `SimpleRunOptions`)
-- [ ] Typed nondet picks — effect/Schema-based per-action pick extraction:
+- [x] Typed nondet picks — effect/Schema-based per-action pick extraction:
   ```ts
   const TransferPicks = Schema.Struct({
     sender: ItfBigInt,

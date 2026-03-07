@@ -22,4 +22,4 @@ export {
 } from "./itf/schema.js"
 export type { ITFValueRaw } from "./itf/schema.js"
 
-export { pickFrom } from "./itf/picks.js"
+export { pickAllFrom, pickFrom } from "./itf/picks.js"

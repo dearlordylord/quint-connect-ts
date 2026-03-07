@@ -8,6 +8,7 @@ export {
   defaultConfig,
   NoTracesError,
   pick,
+  pickAll,
   QuintError,
   QuintNotFoundError,
   run,
