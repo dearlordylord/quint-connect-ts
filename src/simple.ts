@@ -50,6 +50,7 @@ export const run = <S>(
     init: opts.init,
     step: opts.step,
     main: opts.main,
+    verbose: opts.verbose,
     driverFactory: {
       create: () => Effect.promise(async () => wrapDriver(await Promise.resolve(opts.createDriver())))
     },

@@ -10,7 +10,7 @@
 - [x] Tests — unit tests for ITF parsing, integration test with a real .qnt spec
 - [x] Nondet pick helpers — unwrap Quint Option variant encoding (Some/None) for common types
 - [ ] Seed propagation — blocked: quint doesn't embed auto-generated seed in ITF #meta or stderr
-- [ ] Verbosity control — QUINT_VERBOSE env var passthrough
+- [x] Verbosity control — QUINT_VERBOSE env var passthrough
 - [x] README with usage example
 
 ## Post-v1
