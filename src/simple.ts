@@ -55,6 +55,7 @@ export const run = <S>(
     witnesses: opts.witnesses,
     backend: opts.backend,
     concurrency: opts.concurrency,
+    verbose: opts.verbose,
     driverFactory: {
       create: () => Effect.promise(async () => wrapDriver(await Promise.resolve(opts.createDriver())))
     },

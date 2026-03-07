@@ -27,6 +27,7 @@ export interface RunOptions {
   readonly invariants?: ReadonlyArray<string> | undefined
   readonly witnesses?: ReadonlyArray<string> | undefined
   readonly backend?: "typescript" | "rust" | undefined
+  readonly verbose?: boolean | undefined
 }
 
 const DEFAULT_N_TRACES = 100
@@ -93,7 +94,8 @@ export const generateTraces = (
       (e) => new QuintError({ message: `Failed to create temp directory: ${e}` })
     )
     const args = buildRunArgs(opts, tmpDir)
-    const cmd = Command.make("npx", "@informalsystems/quint", ...args)
+    const baseCmd = Command.make("npx", "@informalsystems/quint", ...args)
+    const cmd = opts.verbose === true ? Command.env(baseCmd, { QUINT_VERBOSE: "true" }) : baseCmd
     const proc = yield* Effect.mapError(
       Command.start(cmd),
       (e) => new QuintNotFoundError({ message: `Failed to start quint: ${e}` })
