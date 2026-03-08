@@ -56,7 +56,9 @@
     "specification",
     "testing",
     "itf",
-    "effect"
+    "effect",
+    "property-based-testing",
+    "state-machine"
   ],
   "packageManager": "pnpm@10.29.3",
   "author": "dearlordylord",
