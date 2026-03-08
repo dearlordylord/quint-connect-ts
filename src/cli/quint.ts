@@ -48,8 +48,10 @@ const buildRunArgs = (
     "--out-itf",
     `${outDir}/trace_{seq}.itf.json`
   ]
-  if (opts.backend !== undefined) {
-    args.push("--backend", opts.backend)
+  const envBackend = process.env["QUINT_BACKEND"]
+  const backend = opts.backend ?? (envBackend === "typescript" || envBackend === "rust" ? envBackend : undefined)
+  if (backend !== undefined) {
+    args.push("--backend", backend)
   }
   if (opts.seed !== undefined) {
     args.push("--seed", opts.seed)

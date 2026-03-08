@@ -18,3 +18,5 @@ jobs:
           cache: pnpm
       - run: pnpm install
       - run: pnpm test
+        env:
+          QUINT_BACKEND: typescript
