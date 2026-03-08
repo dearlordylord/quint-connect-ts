@@ -1,5 +1,11 @@
 # @firfi/quint-connect
 
+## 0.2.2
+
+### Patch Changes
+
+- fbda75c: Add npm keywords: property-based-testing, state-machine
+
 ## 0.2.1
 
 ### Patch Changes
