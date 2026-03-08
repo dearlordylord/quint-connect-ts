@@ -1,5 +1,16 @@
 # @firfi/quint-connect
 
+[![npm version][npm-badge]][npm-url]
+[![CI][ci-badge]][ci-url]
+[![Apache-2.0][apache-badge]][apache-url]
+
+[npm-badge]: https://img.shields.io/npm/v/@firfi/quint-connect
+[npm-url]: https://www.npmjs.com/package/@firfi/quint-connect
+[ci-badge]: https://img.shields.io/github/actions/workflow/status/dearlordylord/quint-connect-ts/mbt.yml?branch=master&label=CI
+[ci-url]: https://github.com/dearlordylord/quint-connect-ts/actions/workflows/mbt.yml
+[apache-badge]: https://img.shields.io/badge/license-Apache%20License%202.0-blue
+[apache-url]: https://github.com/dearlordylord/quint-connect-ts/blob/master/LICENSE
+
 Model-based testing framework connecting [Quint](https://github.com/informalsystems/quint) specifications to TypeScript implementations. The TypeScript equivalent of [quint-connect](https://github.com/informalsystems/quint-connect) (Rust).
 
 Spawns `quint run --mbt`, parses ITF traces, replays them through a user-implemented driver, and optionally compares spec state against implementation state after every step.

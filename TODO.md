@@ -13,6 +13,21 @@
 - [x] Verbosity control — QUINT_VERBOSE env var passthrough
 - [x] README with usage example
 
+## README improvements
+
+- [ ] Key Features section — validate each claim before adding:
+  - [ ] "Automatic Trace Generation": spawns `quint run --mbt`, parses ITF traces
+  - [ ] "State Validation": compares impl state against spec state after every step
+  - [ ] "Stateless Mode": omit state checking for smoke-testing
+  - [ ] "Concurrent Replay": replay multiple traces in parallel
+  - [ ] "Dual API": simple promise-based + full Effect API
+  - [ ] "Reproducible Failures": seeds auto-generated and reported, replayable via `QUINT_SEED`
+  - [ ] "Choreo Support": custom `nondetPath` config for sum-type action encoding
+- [ ] Tips and Tricks section (anonymous actions, Option/enum handling, etc.) — test each tip before documenting
+- [ ] Examples directory with runnable examples
+- [ ] Verbosity/reproducibility documentation (`QUINT_VERBOSE`, `QUINT_SEED` workflow)
+- [ ] Overview paragraph explaining what MBT is and why you'd use it
+
 ## Post-v1
 
 - [ ] `quint test` support — blocked on quint issue #1842 (--mbt flag for quint test)
@@ -34,3 +49,4 @@
 - [x] Witness reporting — pass `--witness` to quint run
 - [x] CI example — GitHub Actions workflow for MBT
 - [x] ADR-015 full compliance — verify all ITF value types are handled (variants, unserializable)
+
