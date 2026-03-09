@@ -34,15 +34,39 @@
 - [x] Backend choice — add `--backend rust` option (faster but requires quint rust evaluator binary)
 - [x] Opt-in state comparison — allow drivers to skip state validation
 - [x] Concurrent trace replay — parallelize via Effect fiber concurrency (`concurrency` option on `QuintRunOptions` / `SimpleRunOptions`)
-- [x] Typed nondet picks — effect/Schema-based per-action pick extraction:
-  ```ts
-  const TransferPicks = Schema.Struct({
-    sender: ItfBigInt,
-    receiver: ItfBigInt,
-    amount: ItfBigInt,
-  })
-  driver.on("Transfer", TransferPicks, async (picks) => { ... })
-  ```
+- [ ] Typed action dispatch — declarative per-action schema + handler map, eliminating untyped `switch`/`pick()`:
+  - Existing infra: `pickAllFrom(step, Schema.Struct)` already decodes all picks per action (src/itf/picks.ts)
+  - Existing infra: `ItfOption`, `ITFBigInt`, etc. handle ITF type decoding (via @firfi/itf-trace-parser)
+  - Missing: dispatch layer that maps action name → schema + handler with full type inference
+  - Init action: no handler needed — runner already skips step 0 (runner.ts:98)
+  - Breaking change to `Driver`/`SimpleDriver` — replace untyped `step(Step)` with typed action map
+  - Codegen from .qnt deferred — quint has no stable AST export API for external tools
+  - Target API (simple):
+    ```ts
+    const result = await run({
+      spec: "./counter.qnt",
+      actions: {
+        Increment: {
+          picks: { amount: decodeBigInt },
+          handler: (state, { amount }) => { state.count += amount },  // amount: bigint, typed
+        },
+      },
+      // ...
+    })
+    ```
+  - Target API (Effect):
+    ```ts
+    const result = yield* quintRun({
+      spec: "./counter.qnt",
+      actions: {
+        Increment: {
+          picks: Schema.Struct({ amount: ITFBigInt }),
+          handler: (state, { amount }) => Effect.succeed(state.count += amount),
+        },
+      },
+      // ...
+    })
+    ```
 - [x] Vitest integration — optional helper generating `test()` calls from traces
 - [x] Trace persistence — `--trace-dir` option to keep ITF files for debugging
 - [x] Invariant checking — pass `--invariant` to quint run
