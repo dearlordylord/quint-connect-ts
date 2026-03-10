@@ -46,6 +46,13 @@ const extractMbtMeta = (
       })
   )
 
+/** @internal */
+export const stripMetadata = (state: { readonly [key: string]: unknown }): { readonly [key: string]: unknown } =>
+  Object.fromEntries(Object.entries(state).filter(([k]) => k !== "#meta" && !k.startsWith("mbt::")))
+
+/** @internal */
+export const jsonReplacer = (_: string, v: unknown): unknown => typeof v === "bigint" ? `${v}n` : v
+
 const resolveNestedValue = (
   obj: { readonly [key: string]: unknown },
   path: ReadonlyArray<string>
@@ -95,7 +102,8 @@ const buildPicksDecoder = (picksShape: AnyActionDef["picks"]) => {
   return Schema.decodeUnknown(Schema.Struct(wrappedFields))
 }
 
-const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
+/** @internal */
+export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
   trace: ItfTrace,
   traceIndex: number,
   driver: Driver<S, E, R, Actions>,
@@ -147,7 +155,9 @@ const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
         const actionDef = driver.actions[action]
         if (actionDef === undefined) {
           return yield* new TraceReplayError({
-            message: `Unknown action: ${action}`,
+            message: action === "init"
+              ? `Unknown action: init. This is likely the known Quint typescript backend bug where non-disjunctive step actions report "init" instead of the actual action name. Wrap your step action body in \`any { YourAction, }\` as a workaround, or use \`--backend rust\`.`
+              : `Unknown action: ${action}`,
             traceIndex,
             stepIndex,
             action
@@ -192,13 +202,16 @@ const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
         }
         const specStateRaw = config.statePath.length > 0
           ? resolveNestedValue(rawState, config.statePath)
-          : rawState
+          : stripMetadata(rawState)
         const specState = yield* stateCheck.deserializeState(specStateRaw)
         const implState = yield* driver.getState()
 
         if (!stateCheck.compareState(specState, implState)) {
           return yield* new StateMismatchError({
-            message: `State mismatch at trace ${traceIndex}, step ${stepIndex}, action "${action}" (seed: ${seed})`,
+            message:
+              `State mismatch at trace ${traceIndex}, step ${stepIndex}, action "${action}" (seed: ${seed})\nExpected: ${
+                JSON.stringify(specState, jsonReplacer)
+              }\nActual: ${JSON.stringify(implState, jsonReplacer)}`,
             traceIndex,
             stepIndex,
             expected: specState,

@@ -1,5 +1,5 @@
 import { NodeContext } from "@effect/platform-node"
-import { Effect, Schema } from "effect"
+import { Cause, Effect, Exit, Option, Schema } from "effect"
 
 import { transformITFValue } from "@firfi/itf-trace-parser"
 import type { StandardSchemaV1 } from "@standard-schema/spec"
@@ -209,9 +209,16 @@ export const run = <S, Actions extends SimpleActionMap>(
       : undefined
   })
 
-  return Effect.runPromise(
+  return Effect.runPromiseExit(
     program.pipe(Effect.provide(NodeContext.layer))
-  )
+  ).then((exit) => {
+    if (Exit.isSuccess(exit)) return exit.value
+    const failure = Cause.failureOption(exit.cause)
+    if (Option.isSome(failure)) throw failure.value
+    const defect = Cause.dieOption(exit.cause)
+    if (Option.isSome(defect)) throw defect.value
+    throw new Error("Unknown error in quint-connect run()")
+  })
 }
 
 export const pickFrom = <T>(

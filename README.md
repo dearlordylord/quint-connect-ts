@@ -18,9 +18,18 @@ Spawns `quint run --mbt`, parses ITF traces, replays them through a user-impleme
 ## Install
 
 ```sh
+# Simple API (default):
 pnpm add @firfi/quint-connect
-```
 
+# If using Zod ITF schemas (ITFBigInt, ITFSet, ITFMap):
+pnpm add zod
+
+# For Effect API:
+pnpm add @firfi/quint-connect effect @effect/platform-node
+
+# For Effect vitest helper (quintIt):
+pnpm add -D @effect/vitest
+```
 
 ## Usage
 

@@ -6,11 +6,19 @@ import { expect } from "vitest"
 
 import { ITFBigInt } from "@firfi/itf-trace-parser/effect"
 import { ITFBigInt as ITFBigIntZod } from "@firfi/itf-trace-parser/zod"
+import { z } from "zod"
 
 import type { Config, Driver, PartialActionMap } from "../src/driver/types.js"
 import { defineDriver, stateCheck } from "../src/effect.js"
 import { quintRun, TraceReplayError } from "../src/runner/runner.js"
-import { defineDriver as defineDriverSimple, pickFrom, run } from "../src/simple.js"
+import {
+  defineDriver as defineDriverSimple,
+  pickFrom,
+  run,
+  stateCheck as simpleStateCheck,
+  StateMismatchError as SimpleStateMismatchError,
+  TraceReplayError as SimpleTraceReplayError
+} from "../src/simple.js"
 
 const CounterStateSchema = Schema.Struct({
   count: ITFBigInt
@@ -246,4 +254,60 @@ describe("Integration: nested state spec with statePath", () => {
       Effect.provide(NodeContext.layer),
       Effect.scoped
     ), { timeout: 30000 })
+})
+
+describe("Simple API: error unwrapping", () => {
+  it("TraceReplayError instanceof works after run() rejects", { timeout: 30000 }, async () => {
+    try {
+      await run({
+        spec: path.join(specDir, "counter.qnt"),
+        nTraces: 1,
+        maxSamples: 2,
+        maxSteps: 3,
+        seed: "1",
+        driver: () => ({
+          actions: {}
+        })
+      })
+      expect.unreachable("run() should have thrown")
+    } catch (e: unknown) {
+      expect(e).toBeInstanceOf(SimpleTraceReplayError)
+      if (e instanceof SimpleTraceReplayError) {
+        expect(e._tag).toBe("TraceReplayError")
+        expect(e.message).toContain("Unknown action")
+      }
+    }
+  })
+
+  it("StateMismatchError instanceof works after run() rejects", { timeout: 30000 }, async () => {
+    try {
+      await run({
+        spec: path.join(specDir, "counter.qnt"),
+        nTraces: 1,
+        maxSamples: 2,
+        maxSteps: 3,
+        seed: "1",
+        driver: defineDriverSimple(
+          { Increment: { amount: ITFBigIntZod } },
+          () => ({
+            Increment: () => {
+              // intentionally do nothing — state will mismatch
+            },
+            getState: () => ({ count: 999n })
+          })
+        ),
+        stateCheck: simpleStateCheck(
+          (raw) => z.object({ count: ITFBigIntZod }).parse(raw),
+          (spec, impl) => spec.count === impl.count
+        )
+      })
+      expect.unreachable("run() should have thrown")
+    } catch (e: unknown) {
+      expect(e).toBeInstanceOf(SimpleStateMismatchError)
+      if (e instanceof SimpleStateMismatchError) {
+        expect(e._tag).toBe("StateMismatchError")
+        expect(e.message).toContain("State mismatch")
+      }
+    }
+  })
 })
