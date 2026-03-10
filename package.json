@@ -1,6 +1,6 @@
 {
   "name": "@firfi/quint-connect",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Model-based testing framework connecting Quint specifications to TypeScript implementations",
   "type": "module",
   "main": "./dist/index.js",
@@ -35,7 +35,7 @@
   "homepage": "https://github.com/dearlordylord/quint-connect-ts#readme",
   "scripts": {
     "prepare": "husky",
-    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "build": "rm -rf dist tsconfig.build.tsbuildinfo && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit 2>&1 | { grep -E '^(src/|test/)' && exit 1 || exit 0; }",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
@@ -46,7 +46,7 @@
     "ci": "pnpm build && pnpm typecheck && pnpm lint && pnpm test",
     "circular": "madge --extensions ts --circular src",
     "local-release": "changeset version && changeset publish",
-    "prepublishOnly": "pnpm ci"
+    "prepublishOnly": "pnpm ci && test -f dist/index.js || (echo 'dist/ missing — build failed' && exit 1)"
   },
   "keywords": [
     "quint",

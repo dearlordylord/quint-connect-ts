@@ -1,5 +1,12 @@
 # @firfi/quint-connect
 
+## 0.3.2
+
+### Patch Changes
+
+- Fix published package missing dist/ (0.3.0 and 0.3.1 were broken)
+- Add dist/ existence check to prepublishOnly
+
 ## 0.3.1
 
 ### Patch Changes
