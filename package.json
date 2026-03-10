@@ -1,6 +1,6 @@
 {
   "name": "@firfi/quint-connect",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Model-based testing framework connecting Quint specifications to TypeScript implementations",
   "type": "module",
   "main": "./dist/index.js",
@@ -35,7 +35,7 @@
   "homepage": "https://github.com/dearlordylord/quint-connect-ts#readme",
   "scripts": {
     "prepare": "husky",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit 2>&1 | { grep -E '^(src/|test/)' && exit 1 || exit 0; }",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",

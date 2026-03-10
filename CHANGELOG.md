@@ -1,5 +1,11 @@
 # @firfi/quint-connect
 
+## 0.3.1
+
+### Patch Changes
+
+- Fix stale dist artifacts in published package; clean dist before build
+
 ## 0.3.0
 
 ### Major Changes
