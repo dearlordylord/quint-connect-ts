@@ -3,12 +3,14 @@ import { describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import * as path from "node:path"
 import { expect } from "vitest"
-import type { Config, Driver, Step } from "../src/driver/types.js"
-import { pickFrom } from "../src/itf/picks.js"
-import { ITFBigInt } from "../src/itf/schema.js"
-import { quintRun } from "../src/runner/runner.js"
 
-type CounterState = { readonly count: bigint }
+import { ITFBigInt } from "@firfi/itf-trace-parser/effect"
+import { ITFBigInt as ITFBigIntZod } from "@firfi/itf-trace-parser/zod"
+
+import type { Config, Driver, PartialActionMap } from "../src/driver/types.js"
+import { defineDriver, stateCheck } from "../src/effect.js"
+import { quintRun, TraceReplayError } from "../src/runner/runner.js"
+import { defineDriver as defineDriverSimple, pickFrom, run } from "../src/simple.js"
 
 const CounterStateSchema = Schema.Struct({
   count: ITFBigInt
@@ -16,44 +18,38 @@ const CounterStateSchema = Schema.Struct({
 
 const specDir = path.resolve(import.meta.dirname, "specs")
 
-const createCounterDriver = (): Driver<CounterState> => {
-  let count = 0n
-  return {
-    step: (step: Step) =>
-      Effect.gen(function*() {
-        switch (step.action) {
-          case "Increment": {
-            const amount = yield* pickFrom(step, "amount", ITFBigInt)
-            if (amount !== undefined) {
-              count = count + amount
-            }
-            break
-          }
-          case "init":
-            break
-          default:
-            break
-        }
-      }),
-    getState: () => Effect.succeed({ count })
-  }
-}
-
-const createStatelessCounterDriver = (): Driver<unknown> => ({
-  step: (step: Step) =>
-    Effect.gen(function*() {
-      switch (step.action) {
-        case "Increment": {
-          yield* pickFrom(step, "amount", ITFBigInt)
-          break
-        }
-        case "init":
-          break
-        default:
-          break
+const createCounterDriverFactory = () =>
+  defineDriver(
+    { Increment: { amount: ITFBigInt } },
+    () => {
+      let count = 0n
+      return {
+        Increment: ({ amount }) =>
+          Effect.sync(() => {
+            count += amount
+          }),
+        getState: () => Effect.succeed({ count })
       }
-    })
+    }
+  )
+
+const createCounterDriverWithoutActions = (): Driver<
+  typeof CounterStateSchema.Type,
+  never,
+  never,
+  PartialActionMap
+> => ({
+  actions: {},
+  getState: () => Effect.succeed({ count: 0n })
 })
+
+const createStatelessCounterDriverFactory = () =>
+  defineDriver(
+    { Increment: { amount: ITFBigInt } },
+    () => ({
+      Increment: () => Effect.void
+    })
+  )
 
 describe("Integration: counter spec", () => {
   it.effect("replays traces from quint run against a TS driver", () =>
@@ -64,13 +60,11 @@ describe("Integration: counter spec", () => {
         maxSamples: 3,
         maxSteps: 5,
         seed: "1",
-        driverFactory: {
-          create: () => Effect.succeed(createCounterDriver())
-        },
-        stateCheck: {
-          compareState: (spec: CounterState, impl: CounterState) => spec.count === impl.count,
-          deserializeState: (raw) => Schema.decodeUnknown(CounterStateSchema)(raw).pipe(Effect.orDie)
-        }
+        driverFactory: createCounterDriverFactory(),
+        stateCheck: stateCheck(
+          (raw) => Schema.decodeUnknown(CounterStateSchema)(raw).pipe(Effect.orDie),
+          (spec, impl) => spec.count === impl.count
+        )
       })
 
       expect(result.tracesReplayed).toBeGreaterThan(0)
@@ -89,13 +83,11 @@ describe("Integration: counter spec", () => {
         maxSteps: 5,
         seed: "1",
         concurrency: 3,
-        driverFactory: {
-          create: () => Effect.succeed(createCounterDriver())
-        },
-        stateCheck: {
-          compareState: (spec: CounterState, impl: CounterState) => spec.count === impl.count,
-          deserializeState: (raw) => Schema.decodeUnknown(CounterStateSchema)(raw).pipe(Effect.orDie)
-        }
+        driverFactory: createCounterDriverFactory(),
+        stateCheck: stateCheck(
+          (raw) => Schema.decodeUnknown(CounterStateSchema)(raw).pipe(Effect.orDie),
+          (spec, impl) => spec.count === impl.count
+        )
       })
 
       expect(result.tracesReplayed).toBeGreaterThan(0)
@@ -113,9 +105,7 @@ describe("Integration: counter spec", () => {
         maxSamples: 3,
         maxSteps: 5,
         seed: "1",
-        driverFactory: {
-          create: () => Effect.succeed(createStatelessCounterDriver())
-        }
+        driverFactory: createStatelessCounterDriverFactory()
       })
 
       expect(result.tracesReplayed).toBeGreaterThan(0)
@@ -124,9 +114,90 @@ describe("Integration: counter spec", () => {
       Effect.provide(NodeContext.layer),
       Effect.scoped
     ), { timeout: 30000 })
+
+  it.effect("fails with TraceReplayError on unknown action", () =>
+    Effect.gen(function*() {
+      const result = yield* quintRun({
+        spec: path.join(specDir, "counter.qnt"),
+        nTraces: 1,
+        maxSamples: 2,
+        maxSteps: 3,
+        seed: "1",
+        driverFactory: {
+          create: () => Effect.succeed(createCounterDriverWithoutActions())
+        }
+      }).pipe(
+        Effect.match({
+          onFailure: (error) => error,
+          onSuccess: () => undefined
+        })
+      )
+
+      expect(result).toBeInstanceOf(TraceReplayError)
+      if (result instanceof TraceReplayError) {
+        expect(result.message).toContain("Unknown action")
+      }
+    }).pipe(
+      Effect.provide(NodeContext.layer),
+      Effect.scoped
+    ), { timeout: 30000 })
 })
 
-type NestedState = { readonly count: bigint }
+describe("Integration: raw mode", () => {
+  it("simple API raw mode with defineDriver(factory) and pickFrom", { timeout: 30000 }, async () => {
+    const steps: Array<{ action: string; amount: bigint | undefined }> = []
+    const result = await run({
+      spec: path.join(specDir, "counter.qnt"),
+      nTraces: 1,
+      maxSamples: 2,
+      maxSteps: 3,
+      seed: "1",
+      driver: defineDriverSimple(() => ({
+        step: (action, nondetPicks) => {
+          const amount = pickFrom(nondetPicks, "amount", ITFBigIntZod)
+          steps.push({ action, amount })
+        }
+      }))
+    })
+
+    expect(result.tracesReplayed).toBeGreaterThan(0)
+    expect(steps.length).toBeGreaterThan(0)
+    expect(steps[0].action).toBe("Increment")
+    expect(typeof steps[0].amount).toBe("bigint")
+  })
+
+  it.effect("effect-level raw mode with manual Driver step", () =>
+    Effect.gen(function*() {
+      const steps: Array<{ action: string; picks: ReadonlyMap<string, unknown> }> = []
+      yield* quintRun({
+        spec: path.join(specDir, "counter.qnt"),
+        nTraces: 1,
+        maxSamples: 2,
+        maxSteps: 3,
+        seed: "1",
+        driverFactory: {
+          create: () => {
+            const driver: Driver<unknown, never, never, PartialActionMap> = {
+              actions: {},
+              step: (action: string, picks: ReadonlyMap<string, unknown>) =>
+                Effect.sync(() => {
+                  steps.push({ action, picks })
+                })
+            }
+            return Effect.succeed(driver)
+          }
+        }
+      })
+
+      expect(steps.length).toBeGreaterThan(0)
+      expect(steps[0].action).toBe("Increment")
+      expect(steps[0].picks).toBeInstanceOf(Map)
+      expect(steps[0].picks.has("amount")).toBe(true)
+    }).pipe(
+      Effect.provide(NodeContext.layer),
+      Effect.scoped
+    ), { timeout: 30000 })
+})
 
 const NestedStateSchema = Schema.Struct({
   count: ITFBigInt
@@ -137,27 +208,21 @@ const nestedConfig: Config = {
   nondetPath: []
 }
 
-const createNestedDriver = (): Driver<NestedState> => {
-  let count = 0n
-  return {
-    step: (step: Step) =>
-      Effect.gen(function*() {
-        switch (step.action) {
-          case "Increment": {
-            const amount = yield* pickFrom(step, "amount", ITFBigInt)
-            if (amount !== undefined) {
-              count = count + amount
-            }
-            break
-          }
-          default:
-            break
-        }
-      }),
-    getState: () => Effect.succeed({ count }),
-    config: () => nestedConfig
-  }
-}
+const createNestedDriverFactory = () =>
+  defineDriver(
+    { Increment: { amount: ITFBigInt } },
+    () => {
+      let count = 0n
+      return {
+        Increment: ({ amount }) =>
+          Effect.sync(() => {
+            count += amount
+          }),
+        getState: () => Effect.succeed({ count }),
+        config: () => nestedConfig
+      }
+    }
+  )
 
 describe("Integration: nested state spec with statePath", () => {
   it.effect("replays traces using statePath to extract nested state", () =>
@@ -168,13 +233,11 @@ describe("Integration: nested state spec with statePath", () => {
         maxSamples: 3,
         maxSteps: 5,
         seed: "1",
-        driverFactory: {
-          create: () => Effect.succeed(createNestedDriver())
-        },
-        stateCheck: {
-          compareState: (spec: NestedState, impl: NestedState) => spec.count === impl.count,
-          deserializeState: (raw) => Schema.decodeUnknown(NestedStateSchema)(raw).pipe(Effect.orDie)
-        }
+        driverFactory: createNestedDriverFactory(),
+        stateCheck: stateCheck(
+          (raw) => Schema.decodeUnknown(NestedStateSchema)(raw).pipe(Effect.orDie),
+          (spec, impl) => spec.count === impl.count
+        )
       })
 
       expect(result.tracesReplayed).toBeGreaterThan(0)

@@ -4,10 +4,10 @@ import type * as Path from "@effect/platform/Path"
 import { Array as Arr, Effect, Predicate, Schema } from "effect"
 import type { QuintError, QuintNotFoundError, RunOptions } from "../cli/quint.js"
 import { generateTraces } from "../cli/quint.js"
-import type { Config, Driver, DriverFactory, StateComparator } from "../driver/types.js"
+import type { AnyActionDef, Config, Driver, PartialActionMap, StateComparator } from "../driver/types.js"
 import { defaultConfig } from "../driver/types.js"
 import type { ItfTrace, MbtMeta } from "../itf/schema.js"
-import { MbtMeta as MbtMetaSchema } from "../itf/schema.js"
+import { ItfOption, MbtMeta as MbtMetaSchema } from "../itf/schema.js"
 
 export class StateMismatchError extends Schema.TaggedError<StateMismatchError>()("StateMismatchError", {
   message: Schema.String,
@@ -85,15 +85,33 @@ const extractFromNondetPath = (
   return Effect.succeed({ action, nondetPicks: picks })
 }
 
-const replayTrace = <S, E, R>(
+const buildPicksDecoder = (picksShape: AnyActionDef["picks"]) => {
+  const wrappedFields = Object.fromEntries(
+    Object.entries(picksShape.fields).map(([key, fieldSchema]) => [
+      key,
+      Schema.UndefinedOr(ItfOption(Schema.asSchema(fieldSchema)))
+    ])
+  )
+  return Schema.decodeUnknown(Schema.Struct(wrappedFields))
+}
+
+const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
   trace: ItfTrace,
   traceIndex: number,
-  driver: Driver<S, E, R>,
+  driver: Driver<S, E, R, Actions>,
   config: Config,
   stateCheck: StateCheck<S> | undefined,
   seed: string
 ): Effect.Effect<void, E | StateMismatchError | TraceReplayError, R> =>
   Effect.gen(function*() {
+    const picksDecoders = driver.step === undefined
+      ? new Map(
+        Object.entries(driver.actions)
+          .filter((entry): entry is [string, AnyActionDef<E, R>] => entry[1] !== undefined)
+          .map(([name, def]) => [name, buildPicksDecoder(def.picks)])
+      )
+      : undefined
+
     for (const [stepIndex, rawState] of trace.states.entries()) {
       if (stepIndex === 0) continue // skip init state
 
@@ -113,23 +131,54 @@ const replayTrace = <S, E, R>(
         })
       }
 
-      const step = {
-        action,
-        nondetPicks,
-        rawState
-      }
-
-      yield* Effect.mapError(
-        driver.step(step),
-        (e: E) =>
-          new TraceReplayError({
-            message: `Driver step failed: ${String(e)}`,
+      if (driver.step !== undefined) {
+        yield* Effect.mapError(
+          driver.step(action, nondetPicks),
+          (e: E) =>
+            new TraceReplayError({
+              message: `step failed: ${String(e)}`,
+              traceIndex,
+              stepIndex,
+              action,
+              cause: e
+            })
+        )
+      } else {
+        const actionDef = driver.actions[action]
+        if (actionDef === undefined) {
+          return yield* new TraceReplayError({
+            message: `Unknown action: ${action}`,
             traceIndex,
             stepIndex,
-            action: step.action,
-            cause: e
+            action
           })
-      )
+        }
+
+        const decode = picksDecoders?.get(action) ?? buildPicksDecoder(actionDef.picks)
+        const decodedPicks = yield* Effect.mapError(
+          decode(Object.fromEntries(nondetPicks)),
+          (cause) =>
+            new TraceReplayError({
+              message: `Failed to decode action picks: ${String(cause)}`,
+              traceIndex,
+              stepIndex,
+              action,
+              cause
+            })
+        )
+
+        yield* Effect.mapError(
+          actionDef.handler(decodedPicks),
+          (e: E) =>
+            new TraceReplayError({
+              message: `Action handler failed: ${String(e)}`,
+              traceIndex,
+              stepIndex,
+              action,
+              cause: e
+            })
+        )
+      }
 
       if (stateCheck !== undefined) {
         if (driver.getState === undefined) {
@@ -138,7 +187,7 @@ const replayTrace = <S, E, R>(
               "stateCheck is provided but driver.getState is not defined; getState is required when stateCheck is provided",
             traceIndex,
             stepIndex,
-            action: step.action
+            action
           })
         }
         const specStateRaw = config.statePath.length > 0
@@ -149,8 +198,7 @@ const replayTrace = <S, E, R>(
 
         if (!stateCheck.compareState(specState, implState)) {
           return yield* new StateMismatchError({
-            message:
-              `State mismatch at trace ${traceIndex}, step ${stepIndex}, action "${step.action}" (seed: ${seed})`,
+            message: `State mismatch at trace ${traceIndex}, step ${stepIndex}, action "${action}" (seed: ${seed})`,
             traceIndex,
             stepIndex,
             expected: specState,
@@ -166,8 +214,15 @@ export interface StateCheck<S> {
   readonly deserializeState: (raw: unknown) => Effect.Effect<S>
 }
 
-export type QuintRunOptions<S, E, R> = RunOptions & {
-  readonly driverFactory: DriverFactory<S, E, R>
+export type QuintRunOptions<
+  S,
+  E,
+  R,
+  Actions extends PartialActionMap<E, R> = PartialActionMap<E, R>
+> = RunOptions & {
+  readonly driverFactory: {
+    readonly create: () => Effect.Effect<Driver<S, E, R, Actions>, E, R>
+  }
   readonly stateCheck?: StateCheck<S> | undefined
   readonly concurrency?: number | undefined
 }
@@ -175,8 +230,13 @@ export type QuintRunOptions<S, E, R> = RunOptions & {
 const resolveSeed = (opts: RunOptions): string =>
   opts.seed ?? process.env["QUINT_SEED"] ?? `0x${Math.floor(Math.random() * 0xFFFFFFFF).toString(16).padStart(8, "0")}`
 
-export const quintRun = <S, E, R>(
-  opts: QuintRunOptions<S, E, R>
+export const quintRun = <
+  S,
+  E,
+  R,
+  Actions extends PartialActionMap<E, R> = PartialActionMap<E, R>
+>(
+  opts: QuintRunOptions<S, E, R, Actions>
 ): Effect.Effect<
   { readonly tracesReplayed: number; readonly seed: string },
   E | QuintError | QuintNotFoundError | StateMismatchError | TraceReplayError | NoTracesError,

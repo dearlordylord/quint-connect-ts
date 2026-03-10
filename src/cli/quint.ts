@@ -32,7 +32,9 @@ export interface RunOptions {
   readonly traceDir?: string | undefined
 }
 
-const DEFAULT_N_TRACES = 100
+const DEFAULT_N_TRACES = 10
+// quint defaults maxSamples to 1 when --seed is provided; use the non-seed default instead
+const DEFAULT_MAX_SAMPLES = 10000
 
 const buildRunArgs = (
   opts: RunOptions,
@@ -49,10 +51,8 @@ const buildRunArgs = (
     `${outDir}/trace_{seq}.itf.json`
   ]
   const envBackend = process.env["QUINT_BACKEND"]
-  const backend = opts.backend ?? (envBackend === "typescript" || envBackend === "rust" ? envBackend : undefined)
-  if (backend !== undefined) {
-    args.push("--backend", backend)
-  }
+  const backend = opts.backend ?? (envBackend === "typescript" || envBackend === "rust" ? envBackend : "typescript")
+  args.push("--backend", backend)
   if (opts.seed !== undefined) {
     args.push("--seed", opts.seed)
   }
@@ -61,6 +61,8 @@ const buildRunArgs = (
   }
   if (opts.maxSamples !== undefined) {
     args.push("--max-samples", String(opts.maxSamples))
+  } else if (opts.seed !== undefined) {
+    args.push("--max-samples", String(DEFAULT_MAX_SAMPLES))
   }
   if (opts.init !== undefined) {
     args.push("--init", opts.init)

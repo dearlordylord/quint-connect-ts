@@ -1,76 +1,211 @@
 import { NodeContext } from "@effect/platform-node"
-import { Effect, Predicate, Schema } from "effect"
+import { Effect, Schema } from "effect"
+
+import { transformITFValue } from "@firfi/itf-trace-parser"
+import type { StandardSchemaV1 } from "@standard-schema/spec"
 
 import type { RunOptions } from "./cli/quint.js"
-import type { Config, Driver, Step } from "./driver/types.js"
-import { ITFBigInt, ITFUnserializable } from "./itf/schema.js"
+import type { ActionMap, AnyActionDef, Config, Driver } from "./driver/types.js"
 import { quintRun } from "./runner/runner.js"
 
-// Re-export framework-agnostic types
 export type { RunOptions } from "./cli/quint.js"
-export type { Config, Step } from "./driver/types.js"
+export type { Config } from "./driver/types.js"
 export { defaultConfig } from "./driver/types.js"
 
-// Re-export errors for instanceof checks
 export { QuintError, QuintNotFoundError } from "./cli/quint.js"
 export { NoTracesError, StateMismatchError, TraceReplayError } from "./runner/runner.js"
 
-export type SimpleDriver<S> = {
-  readonly step: (step: Step) => void | Promise<void>
-  readonly getState?: () => S
-  readonly config?: () => Config
+// Per-field schemas for one action's picks
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type PicksSchema = Record<string, StandardSchemaV1<any, any>>
+
+// Handler receives each field's output type (use schema's .optional() for | undefined)
+type HandlerPicks<Fields extends PicksSchema> = {
+  readonly [K in keyof Fields]: StandardSchemaV1.InferOutput<Fields[K]>
 }
 
-export type SimpleRunOptions<S> = RunOptions & {
-  readonly createDriver: () => SimpleDriver<S> | Promise<SimpleDriver<S>>
-  readonly stateCheck?: {
-    readonly compareState: (spec: S, impl: S) => boolean
-    readonly deserializeState: (raw: unknown) => S
-  } | undefined
+interface AnySimpleActionDefPicks {
+  readonly picks: PicksSchema
+}
+
+interface AnySimpleActionDefHandler {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly handler: (picks: any) => void | Promise<void>
+}
+
+type AnySimpleActionDef = AnySimpleActionDefPicks & AnySimpleActionDefHandler
+
+export interface SimpleActionMap {
+  readonly [action: string]: AnySimpleActionDef
+}
+
+interface SimpleDriverActions<Actions extends SimpleActionMap> {
+  readonly actions: Actions
+}
+
+interface SimpleDriverHooks<S> {
+  readonly getState?: () => S
+  readonly config?: () => Config
+  readonly step?: (action: string, nondetPicks: ReadonlyMap<string, unknown>) => void | Promise<void>
+}
+
+export type SimpleDriver<S, Actions extends SimpleActionMap = SimpleActionMap> =
+  & SimpleDriverActions<Actions>
+  & SimpleDriverHooks<S>
+
+interface SimpleRunStateCheck<S> {
+  readonly compareState: (spec: S, impl: S) => boolean
+  readonly deserializeState: (raw: unknown) => S
+}
+
+export const stateCheck = <S>(
+  deserializeState: (raw: unknown) => S,
+  compareState: (spec: S, impl: S) => boolean
+): SimpleRunStateCheck<S> => ({ compareState, deserializeState })
+
+interface SimpleRunDriver<S, Actions extends SimpleActionMap> {
+  readonly driver: () => SimpleDriver<S, Actions> | Promise<SimpleDriver<S, Actions>>
+}
+
+interface SimpleRunOptionsExtra<S> {
+  readonly stateCheck?: SimpleRunStateCheck<S> | undefined
   readonly concurrency?: number | undefined
 }
 
-const wrapDriver = <S>(simple: SimpleDriver<S>): Driver<S> => {
-  const simpleGetState = simple.getState
-  return {
-    step: (s: Step) =>
-      Effect.promise(async () => {
-        await Promise.resolve(simple.step(s))
-      }),
-    ...(simpleGetState !== undefined ? { getState: () => Effect.sync(simpleGetState) } : {}),
-    ...(simple.config !== undefined ? { config: simple.config } : {})
+export type SimpleRunOptions<S, Actions extends SimpleActionMap = SimpleActionMap> =
+  & RunOptions
+  & SimpleRunDriver<S, Actions>
+  & SimpleRunOptionsExtra<S>
+
+// Overload 1: typed mode — defineDriver(schema, factory)
+export function defineDriver<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  S extends Record<string, Record<string, StandardSchemaV1<any, any>>>,
+  State = unknown
+>(
+  schema: S,
+  factory: () =>
+    & { [K in keyof S]: (picks: HandlerPicks<S[K]>) => void | Promise<void> }
+    & {
+      getState?: () => State
+      config?: () => Config
+    }
+): () => SimpleDriver<State>
+// Overload 2: raw mode — defineDriver(factory)
+export function defineDriver<State = unknown>(
+  factory: () => {
+    step: (action: string, nondetPicks: ReadonlyMap<string, unknown>) => void | Promise<void>
+    getState?: () => State
+    config?: () => Config
+  }
+): () => SimpleDriver<State>
+// Implementation
+export function defineDriver(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  schemaOrFactory: Record<string, Record<string, StandardSchemaV1<any, any>>> | (() => any),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  maybeFactory?: () => any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): () => SimpleDriver<any> {
+  if (typeof schemaOrFactory === "function") {
+    // Raw mode
+    const factory = schemaOrFactory
+    return () => {
+      const result = factory()
+      return {
+        actions: {},
+        step: result.step,
+        ...(result.getState ? { getState: result.getState } : {}),
+        ...(result.config ? { config: result.config } : {})
+      }
+    }
+  }
+  // Typed mode
+  const schema = schemaOrFactory
+  const factory = maybeFactory!
+  return () => {
+    const result = factory()
+    const actions: Record<string, AnySimpleActionDef> = {}
+    for (const name of Object.keys(schema)) {
+      actions[name] = { picks: schema[name], handler: result[name] }
+    }
+    return {
+      actions,
+      ...(result.getState ? { getState: result.getState } : {}),
+      ...(result.config ? { config: result.config } : {})
+    }
   }
 }
 
-export const run = <S>(
-  opts: SimpleRunOptions<S>
-): Promise<{ readonly tracesReplayed: number; readonly seed: string }> => {
-  const program = quintRun({
-    spec: opts.spec,
-    seed: opts.seed,
-    nTraces: opts.nTraces,
-    maxSteps: opts.maxSteps,
-    maxSamples: opts.maxSamples,
-    init: opts.init,
-    step: opts.step,
-    main: opts.main,
-    invariants: opts.invariants,
-    witnesses: opts.witnesses,
-    backend: opts.backend,
-    concurrency: opts.concurrency,
-    verbose: opts.verbose,
-    traceDir: opts.traceDir,
-    driverFactory: {
-      create: () => Effect.promise(async () => wrapDriver(await Promise.resolve(opts.createDriver())))
-    },
-    stateCheck: opts.stateCheck !== undefined
-      ? (() => {
-        const { compareState, deserializeState } = opts.stateCheck
-        return {
-          compareState,
-          deserializeState: (raw: unknown) => Effect.sync(() => deserializeState(raw))
+const wrapAction = (
+  actionDef: AnySimpleActionDef
+): AnyActionDef => {
+  const fields: Record<string, Schema.Schema<unknown, unknown, never>> = {}
+  for (const key of Object.keys(actionDef.picks)) {
+    fields[key] = Schema.Unknown
+  }
+
+  return {
+    picks: Schema.Struct(fields),
+    handler: (rawPicks) =>
+      Effect.promise(async () => {
+        const decoded: Record<string, unknown> = {}
+        for (const [key, schema] of Object.entries(actionDef.picks)) {
+          const raw = rawPicks[key]
+          const transformed = raw === undefined ? undefined : transformITFValue(raw)
+          const result = schema["~standard"].validate(transformed)
+          const resolved = result instanceof Promise ? await result : result
+          if (resolved.issues) {
+            throw new Error(
+              `Pick "${key}" validation failed: ${resolved.issues.map((i) => i.message).join(", ")}`
+            )
+          }
+          decoded[key] = resolved.value
         }
-      })()
+        await Promise.resolve(actionDef.handler(decoded))
+      })
+  }
+}
+
+const wrapDriver = <S, Actions extends SimpleActionMap>(
+  simple: SimpleDriver<S, Actions>
+): Driver<S, never, never, ActionMap> => {
+  const actions: Record<string, AnyActionDef> = {}
+  for (const [action, def] of Object.entries(simple.actions)) {
+    actions[action] = wrapAction(def)
+  }
+
+  const simpleGetState = simple.getState
+  const simpleStep = simple.step
+  return {
+    actions,
+    ...(simpleGetState !== undefined ? { getState: () => Effect.sync(simpleGetState) } : {}),
+    ...(simple.config !== undefined ? { config: simple.config } : {}),
+    ...(simpleStep !== undefined
+      ? {
+        step: (action: string, picks: ReadonlyMap<string, unknown>) =>
+          Effect.promise(async () => {
+            await Promise.resolve(simpleStep(action, picks))
+          })
+      }
+      : {})
+  }
+}
+
+export const run = <S, Actions extends SimpleActionMap>(
+  opts: SimpleRunOptions<S, Actions>
+): Promise<{ readonly tracesReplayed: number; readonly seed: string }> => {
+  const { driver, stateCheck: sc, ...runOpts } = opts
+  const program = quintRun({
+    ...runOpts,
+    driverFactory: {
+      create: () => Effect.promise(async () => wrapDriver(await Promise.resolve(driver())))
+    },
+    stateCheck: sc !== undefined
+      ? {
+        compareState: sc.compareState,
+        deserializeState: (raw: unknown) => Effect.sync(() => sc.deserializeState(transformITFValue(raw)))
+      }
       : undefined
   })
 
@@ -79,85 +214,33 @@ export const run = <S>(
   )
 }
 
-// --- Option unwrap helpers ---
-
-const unwrapOption = (raw: unknown): unknown => {
-  if (Predicate.isRecord(raw) && "tag" in raw) {
-    if (raw["tag"] === "Some" && "value" in raw) {
-      return raw["value"]
-    }
-    if (raw["tag"] === "None") {
-      return undefined
-    }
-  }
-  return raw
-}
-
-// --- pick: sync Option unwrap ---
-
-export function pick(step: Step, key: string): unknown | undefined
-export function pick<A>(step: Step, key: string, decode: (raw: unknown) => A): A | undefined
-export function pick<A>(step: Step, key: string, decode?: (raw: unknown) => A): A | unknown | undefined {
-  const raw = step.nondetPicks.get(key)
+export const pickFrom = <T>(
+  nondetPicks: ReadonlyMap<string, unknown>,
+  key: string,
+  schema: StandardSchemaV1<unknown, T>
+): T | undefined => {
+  const raw = nondetPicks.get(key)
   if (raw === undefined) return undefined
-  const value = unwrapOption(raw)
-  if (value === undefined) return undefined
-  return decode !== undefined ? decode(value) : value
+  // Unwrap Quint Option: { tag: "Some", value: x } | { tag: "None", ... }
+  if (typeof raw !== "object" || raw === null || !("tag" in raw)) {
+    throw new Error(`pickFrom "${key}": expected Quint Option (Some/None), got: ${JSON.stringify(raw)}`)
+  }
+  const variant = raw as { tag: string; value?: unknown }
+  if (variant.tag === "None") return undefined
+  if (variant.tag !== "Some") {
+    throw new Error(`pickFrom "${key}": expected Option tag "Some" or "None", got: "${variant.tag}"`)
+  }
+  const transformed = transformITFValue(variant.value)
+  const result = schema["~standard"].validate(transformed)
+  if (result instanceof Promise) {
+    throw new Error("pickFrom does not support async schemas")
+  }
+  if (result.issues) {
+    throw new Error(
+      `pickFrom "${key}" validation failed: ${result.issues.map((i) => i.message).join(", ")}`
+    )
+  }
+  return result.value
 }
 
-// --- pickAll: sync batch Option unwrap ---
-
-/**
- * Extract all nondet picks at once with a sync decoder.
- *
- * Converts the step's nondetPicks map to a plain object, unwrapping
- * Quint Option variants (Some -> inner value, None -> undefined),
- * then passes the result to the user's decode function.
- */
-export const pickAll = <A>(
-  step: Step,
-  decode: (raw: Record<string, unknown>) => A
-): A => {
-  const unwrapped = Object.fromEntries(
-    Array.from(step.nondetPicks, ([key, value]) => [key, unwrapOption(value)])
-  )
-  return decode(unwrapped)
-}
-
-// --- Sync ITF decoders (wrap Effect schemas) ---
-
-export const decodeBigInt = (raw: unknown): bigint => Schema.decodeUnknownSync(ITFBigInt)(raw)
-
-export const decodeSet = <A>(raw: unknown, decodeItem: (v: unknown) => A): ReadonlySet<A> => {
-  const struct = Schema.decodeUnknownSync(
-    Schema.Struct({ "#set": Schema.Array(Schema.Unknown) })
-  )(raw)
-  return new Set(struct["#set"].map(decodeItem))
-}
-
-export const decodeMap = <K, V>(
-  raw: unknown,
-  decodeKey: (v: unknown) => K,
-  decodeValue: (v: unknown) => V
-): ReadonlyMap<K, V> => {
-  const struct = Schema.decodeUnknownSync(
-    Schema.Struct({ "#map": Schema.Array(Schema.Tuple(Schema.Unknown, Schema.Unknown)) })
-  )(raw)
-  return new Map(struct["#map"].map(([k, v]) => [decodeKey(k), decodeValue(v)] as const))
-}
-
-export const decodeTuple = (raw: unknown): ReadonlyArray<unknown> =>
-  Schema.decodeUnknownSync(
-    Schema.Struct({ "#tup": Schema.Array(Schema.Unknown) })
-  )(raw)["#tup"]
-
-export const decodeList = <A>(
-  raw: unknown,
-  decodeItem: (v: unknown) => A
-): ReadonlyArray<A> => {
-  const arr = Schema.decodeUnknownSync(Schema.Array(Schema.Unknown))(raw)
-  return arr.map(decodeItem)
-}
-
-export const decodeUnserializable = (raw: unknown): string =>
-  Schema.decodeUnknownSync(ITFUnserializable)(raw)["#unserializable"]
+export { transformITFValue } from "@firfi/itf-trace-parser"

@@ -26,18 +26,18 @@ Type casts (`as T`) are a sin. Avoid them. All data crossing system boundaries (
 ## Architecture
 
 - `src/itf/` — ITF Option/MbtMeta schemas; ITF type decoders via `@firfi/itf-trace-parser`
-- `src/driver/` — Driver interface, Step, Config types
+- `src/driver/` — Driver interface, Config, ActionDef types
 - `src/cli/` — Quint CLI subprocess spawning and trace file reading
 - `src/runner/` — Trace replay orchestration and state comparison
-- `src/simple.ts` — Simple (non-Effect) API: `run`, `pick`, sync decoders
-- `src/effect.ts` — Effect API re-exports
+- `src/simple.ts` — Simple (non-Effect) API: `run`, `defineDriver` (Standard Schema picks)
+- `src/effect.ts` — Effect API: `defineDriver` (Effect Schema picks), re-exports
 - `src/index.ts` — Default entry point, re-exports simple API
 
 Dual entry points: `@firfi/quint-connect` (simple) and `@firfi/quint-connect/effect` (Effect).
 
 ## Key Design Decisions
 
-- **Backend**: No `--backend` flag by default (inherits quint CLI default = `rust`). `--backend typescript` has a known bug with non-disjunctive step actions.
+- **Backend**: Default is `typescript` (works everywhere, no extra deps). Known bug with non-disjunctive step actions. `rust` backend requires separate evaluator download.
 - **State comparison**: Full comparison after every step (Rust feature parity)
 - **Framework-agnostic**: Throws on failure, works with any test runner
 - **Temp directory**: Effect-managed scoped resource, auto-cleanup

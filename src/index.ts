@@ -1,19 +1,15 @@
 export {
-  decodeBigInt,
-  decodeList,
-  decodeMap,
-  decodeSet,
-  decodeTuple,
-  decodeUnserializable,
   defaultConfig,
+  defineDriver,
   NoTracesError,
-  pick,
-  pickAll,
+  pickFrom,
   QuintError,
   QuintNotFoundError,
   run,
+  stateCheck,
   StateMismatchError,
-  TraceReplayError
+  TraceReplayError,
+  transformITFValue
 } from "./simple.js"
 
-export type { Config, RunOptions, SimpleDriver, SimpleRunOptions, Step } from "./simple.js"
+export type { Config, RunOptions, SimpleActionMap, SimpleDriver, SimpleRunOptions } from "./simple.js"

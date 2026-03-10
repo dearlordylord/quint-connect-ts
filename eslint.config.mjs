@@ -16,17 +16,17 @@ export default [
   // TypeScript recommended
   ...tseslint.configs.recommended.map(config => ({
     ...config,
-    files: ["src/**/*.ts", "test/**/*.ts"]
+    files: ["src/**/*.ts", "test/**/*.ts", "examples/**/*.ts"]
   })),
 
   // Effect dprint formatting rules
   ...effectEslint.configs.dprint.map(config => ({
     ...config,
-    files: ["src/**/*.ts", "test/**/*.ts"]
+    files: ["src/**/*.ts", "test/**/*.ts", "examples/**/*.ts"]
   })),
 
   {
-    files: ["src/**/*.ts", "test/**/*.ts"],
+    files: ["src/**/*.ts", "test/**/*.ts", "examples/**/*.ts"],
 
     plugins: {
       functional,

@@ -1,96 +1,68 @@
 import { Effect, Schema } from "effect"
 import * as path from "node:path"
 import { describe } from "vitest"
+import { z } from "zod"
 
-import type { Driver, Step } from "../src/driver/types.js"
-import { pickFrom } from "../src/itf/picks.js"
-import { ITFBigInt } from "../src/itf/schema.js"
-import { decodeBigInt, pick } from "../src/simple.js"
+import { ITFBigInt as EffectITFBigInt } from "@firfi/itf-trace-parser/effect"
+import { ITFBigInt as ZodITFBigInt } from "@firfi/itf-trace-parser/zod"
+
+import { defineDriver as defineEffectDriver, stateCheck as effectStateCheck } from "../src/effect.js"
+import { defineDriver, stateCheck } from "../src/simple.js"
 import { quintIt, quintTest } from "../src/vitest.js"
 
-type CounterState = { readonly count: bigint }
-
-const CounterStateSchema = Schema.Struct({
-  count: ITFBigInt
-})
+const CounterState = z.object({ count: z.bigint() })
+const CounterStateSchema = Schema.Struct({ count: EffectITFBigInt })
 
 const specDir = path.resolve(import.meta.dirname, "specs")
 
-const createSimpleCounterDriver = () => {
-  let count = 0n
-  return {
-    step: (step: Step) => {
-      switch (step.action) {
-        case "Increment": {
-          const amount = pick(step, "amount", decodeBigInt)
-          if (amount !== undefined) {
-            count = count + amount
-          }
-          break
-        }
-        case "init":
-          break
-        default:
-          break
-      }
-    },
-    getState: () => ({ count })
-  }
-}
-
-const createEffectCounterDriver = (): Driver<CounterState> => {
-  let count = 0n
-  return {
-    step: (step: Step) =>
-      Effect.gen(function*() {
-        switch (step.action) {
-          case "Increment": {
-            const amount = yield* pickFrom(step, "amount", ITFBigInt)
-            if (amount !== undefined) {
-              count = count + amount
-            }
-            break
-          }
-          case "init":
-            break
-          default:
-            break
-        }
-      }),
-    getState: () => Effect.succeed({ count })
-  }
-}
-
 describe("Vitest helpers", () => {
-  describe("quintTest (simple API)", () => {
-    quintTest("replays counter traces via simple API", {
+  describe("quintTest (simple API with Zod)", () => {
+    quintTest("replays counter traces via simple API with Zod", {
       spec: path.join(specDir, "counter.qnt"),
       nTraces: 3,
       maxSamples: 3,
       maxSteps: 5,
       seed: "1",
-      createDriver: createSimpleCounterDriver,
-      stateCheck: {
-        compareState: (spec: CounterState, impl: CounterState) => spec.count === impl.count,
-        deserializeState: (raw) => Schema.decodeUnknownSync(CounterStateSchema)(raw)
-      }
+      driver: defineDriver({ Increment: { amount: ZodITFBigInt } }, () => {
+        let count = 0n
+        return {
+          Increment: ({ amount }) => {
+            count += amount
+          },
+          getState: () => ({ count })
+        }
+      }),
+      stateCheck: stateCheck(
+        (raw) => CounterState.parse(raw),
+        (spec, impl) => spec.count === impl.count
+      )
     })
   })
 
-  describe("quintIt (Effect API)", () => {
+  describe("quintIt (Effect API with defineDriver)", () => {
     quintIt("replays counter traces via Effect API", {
       spec: path.join(specDir, "counter.qnt"),
       nTraces: 3,
       maxSamples: 3,
       maxSteps: 5,
       seed: "1",
-      driverFactory: {
-        create: () => Effect.succeed(createEffectCounterDriver())
-      },
-      stateCheck: {
-        compareState: (spec: CounterState, impl: CounterState) => spec.count === impl.count,
-        deserializeState: (raw) => Schema.decodeUnknown(CounterStateSchema)(raw).pipe(Effect.orDie)
-      }
+      driverFactory: defineEffectDriver(
+        { Increment: { amount: EffectITFBigInt } },
+        () => {
+          let count = 0n
+          return {
+            Increment: ({ amount }) =>
+              Effect.sync(() => {
+                count += amount
+              }),
+            getState: () => Effect.succeed({ count })
+          }
+        }
+      ),
+      stateCheck: effectStateCheck(
+        (raw) => Schema.decodeUnknown(CounterStateSchema)(raw).pipe(Effect.orDie),
+        (spec, impl) => spec.count === impl.count
+      )
     })
   })
 })

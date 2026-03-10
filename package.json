@@ -40,9 +40,9 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
-    "lint": "eslint src test --ext .ts && jscpd src",
-    "lint:fix": "eslint src test --ext .ts --fix",
-    "check-format": "eslint src test --ext .ts --rule '@effect/dprint: error'",
+    "lint": "eslint src test examples --ext .ts && jscpd src",
+    "lint:fix": "eslint src test examples --ext .ts --fix",
+    "check-format": "eslint src test examples --ext .ts --rule '@effect/dprint: error'",
     "ci": "pnpm build && pnpm typecheck && pnpm lint && pnpm test",
     "circular": "madge --extensions ts --circular src",
     "local-release": "changeset version && changeset publish",
@@ -75,6 +75,7 @@
     "@effect/platform": "^0.94.5",
     "@effect/platform-node": "^0.104.1",
     "@firfi/itf-trace-parser": "0.1.2",
+    "@standard-schema/spec": "^1.1.0",
     "effect": "^3.19.15"
   },
   "lint-staged": {
@@ -107,6 +108,7 @@
     "madge": "^8.0.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.54.0",
-    "vitest": "latest"
+    "vitest": "latest",
+    "zod": "^4.3.6"
   }
 }
