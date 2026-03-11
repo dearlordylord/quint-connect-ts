@@ -8,9 +8,7 @@ import { Effect, Schema } from "effect"
 import * as path from "node:path"
 import { describe } from "vitest"
 
-import { ITFBigInt } from "@firfi/itf-trace-parser/effect"
-
-import { defineDriver, stateCheck } from "../../src/effect.js"
+import { defineDriver, ITFBigInt, stateCheck } from "../../src/effect.js"
 import { quintIt } from "../../src/vitest.js"
 
 // 1. Define state schema (ITFBigInt handles {"#bigint":"N"} → bigint)

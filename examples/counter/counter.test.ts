@@ -8,7 +8,7 @@ import * as path from "node:path"
 import { describe } from "vitest"
 import { z } from "zod"
 
-import { ITFBigInt } from "@firfi/itf-trace-parser/zod"
+import { ITFBigInt } from "../../src/zod.js"
 
 import { defineDriver, stateCheck } from "../../src/simple.js"
 import { quintTest } from "../../src/vitest.js"

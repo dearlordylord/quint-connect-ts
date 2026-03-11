@@ -45,7 +45,9 @@ module counter {
     nondet amount = Set(1, 2, 3).oneOf()
     count' = count + amount
   }
-  action step = Increment
+  action step = any {
+    Increment,
+  }
 }
 ```
 
@@ -53,7 +55,7 @@ Write a driver and run:
 
 ```ts
 import { defineDriver, run, stateCheck } from "@firfi/quint-connect"
-import { ITFBigInt } from "@firfi/itf-trace-parser/zod"
+import { ITFBigInt } from "@firfi/quint-connect/zod"
 import { z } from "zod"
 
 const CounterState = z.object({ count: z.bigint() })
@@ -228,7 +230,7 @@ For full manual control (no schema, no typed dispatch), use the single-argument 
 
 ```ts
 import { defineDriver, run, pickFrom } from "@firfi/quint-connect"
-import { ITFBigInt } from "@firfi/itf-trace-parser/zod"
+import { ITFBigInt } from "@firfi/quint-connect/zod"
 
 const result = await run({
   spec: "./counter.qnt",
