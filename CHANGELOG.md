@@ -1,5 +1,21 @@
 # @firfi/quint-connect
 
+## 0.4.1
+
+### Patch Changes
+
+- ### Bug fixes
+
+  - Fix runtime crash when `config()` returns partial Config (e.g. only `statePath` without `nondetPath`)
+  - QuintError message now includes quint's stderr output for better debugging
+
+  ### Documentation
+
+  - Document vitest helper import paths (`@firfi/quint-connect/vitest-simple`, `@firfi/quint-connect/vitest`)
+  - Document error handling: exported error types, `instanceof` (Simple API), `catchTag` (Effect API)
+  - Document additional exports across all entry points
+  - Add Quint CLI prerequisite to requirements
+
 ## 0.4.0
 
 ### Minor Changes
