@@ -257,6 +257,168 @@ describe("Integration: nested state spec with statePath", () => {
     ), { timeout: 30000 })
 })
 
+// ---------------------------------------------------------------------------
+// Multi-module spec: module-qualified state keys
+// ---------------------------------------------------------------------------
+
+const MultimodStateSchema = Schema.Struct({
+  "multimod::ctr::count": ITFBigInt
+})
+
+describe("Integration: multi-module spec with qualified state keys", () => {
+  it.effect("instance state keys are fully qualified (mainModule::alias::var)", () =>
+    Effect.gen(function*() {
+      const rawStates: Array<Record<string, unknown>> = []
+      const actions: Array<string> = []
+
+      yield* quintRun({
+        spec: path.join(specDir, "multimod.qnt"),
+        main: "multimod",
+        nTraces: 1,
+        maxSamples: 2,
+        maxSteps: 3,
+        seed: "1",
+        driverFactory: {
+          create: () => {
+            const driver: Driver<unknown, never, never, PartialActionMap> = {
+              actions: {},
+              step: (action, _nondetPicks) =>
+                Effect.sync(() => {
+                  actions.push(action)
+                }),
+              getState: () => Effect.succeed({})
+            }
+            return Effect.succeed(driver)
+          }
+        },
+        stateCheck: stateCheck(
+          (raw) => {
+            if (typeof raw === "object" && raw !== null) {
+              rawStates.push({ ...raw as Record<string, unknown> })
+            }
+            return Effect.succeed(raw)
+          },
+          () => true
+        )
+      })
+
+      expect(rawStates.length).toBeGreaterThan(0)
+
+      const firstState = rawStates[0]
+      const keys = Object.keys(firstState)
+      // Metadata should be stripped
+      expect(keys.some(k => k === "#meta" || k.startsWith("mbt::"))).toBe(false)
+      // Instance state keys are fully qualified: "mainModule::alias::variable"
+      expect(keys).toContain("multimod::ctr::count")
+      // Actions are NOT qualified
+      expect(actions.length).toBeGreaterThan(0)
+      expect(actions[0]).toBe("Increment")
+    }).pipe(
+      Effect.provide(NodeContext.layer),
+      Effect.scoped
+    ), { timeout: 30000 })
+
+  it.effect("full replay with state check using qualified keys", () =>
+    Effect.gen(function*() {
+      const factory = defineDriver(
+        { Increment: { amount: ITFBigInt } },
+        () => {
+          let count = 0n
+          return {
+            Increment: ({ amount }) =>
+              Effect.sync(() => {
+                count += amount
+              }),
+            getState: () => Effect.succeed({ "multimod::ctr::count": count })
+          }
+        }
+      )
+
+      const result = yield* quintRun({
+        spec: path.join(specDir, "multimod.qnt"),
+        main: "multimod",
+        nTraces: 3,
+        maxSamples: 3,
+        maxSteps: 5,
+        seed: "1",
+        driverFactory: factory,
+        stateCheck: stateCheck(
+          (raw) => Schema.decodeUnknown(MultimodStateSchema)(raw).pipe(Effect.orDie),
+          (spec, impl) => spec["multimod::ctr::count"] === impl["multimod::ctr::count"]
+        )
+      })
+
+      expect(result.tracesReplayed).toBeGreaterThan(0)
+    }).pipe(
+      Effect.provide(NodeContext.layer),
+      Effect.scoped
+    ), { timeout: 30000 })
+})
+
+// ---------------------------------------------------------------------------
+// statePath with module-qualified keys (mirrors Rust quint-connect pattern)
+// ---------------------------------------------------------------------------
+
+const MultimodNestedInnerSchema = Schema.Struct({
+  count: ITFBigInt,
+  label: Schema.String
+})
+
+describe("Integration: statePath through qualified key", () => {
+  it.effect("statePath extracts inner record from qualified key", () =>
+    Effect.gen(function*() {
+      const rawStates: Array<Record<string, unknown>> = []
+
+      const factory = defineDriver(
+        { Increment: { amount: ITFBigInt } },
+        () => {
+          let count = 0n
+          let label = "start"
+          return {
+            Increment: ({ amount }) =>
+              Effect.sync(() => {
+                count += amount
+                label = "incremented"
+              }),
+            getState: () => Effect.succeed({ count, label }),
+            config: () => ({ statePath: ["multimod_nested::rc::state"] })
+          }
+        }
+      )
+
+      const result = yield* quintRun({
+        spec: path.join(specDir, "multimod_nested.qnt"),
+        main: "multimod_nested",
+        nTraces: 3,
+        maxSamples: 3,
+        maxSteps: 5,
+        seed: "1",
+        driverFactory: factory,
+        stateCheck: stateCheck(
+          (raw) => {
+            if (typeof raw === "object" && raw !== null) {
+              rawStates.push({ ...raw as Record<string, unknown> })
+            }
+            return Schema.decodeUnknown(MultimodNestedInnerSchema)(raw).pipe(Effect.orDie)
+          },
+          (spec, impl) => spec.count === impl.count
+        )
+      })
+
+      expect(result.tracesReplayed).toBeGreaterThan(0)
+
+      // deserializeState should receive inner record without qualified keys
+      expect(rawStates.length).toBeGreaterThan(0)
+      const keys = Object.keys(rawStates[0])
+      expect(keys).toContain("count")
+      expect(keys).toContain("label")
+      expect(keys.some(k => k.includes("::"))).toBe(false)
+    }).pipe(
+      Effect.provide(NodeContext.layer),
+      Effect.scoped
+    ), { timeout: 30000 })
+})
+
 const createPartialConfigDriverFactory = () =>
   defineDriver(
     { Increment: { amount: ITFBigInt } },

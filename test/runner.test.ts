@@ -45,6 +45,228 @@ describe("stripMetadata", () => {
 })
 
 // ---------------------------------------------------------------------------
+// Module-qualified state keys (multi-module specs)
+// ---------------------------------------------------------------------------
+
+describe("stripMetadata preserves module-qualified state keys", () => {
+  it("keeps keys with :: that are not mbt::", () => {
+    const raw = {
+      "#meta": { index: 1 },
+      "mbt::actionTaken": "Increment",
+      "mbt::nondetPicks": { amount: 1 },
+      "counter_inner::count": 42
+    }
+    const result = stripMetadata(raw)
+    expect(result).toEqual({ "counter_inner::count": 42 })
+  })
+
+  it("keeps deeply qualified keys", () => {
+    const raw = {
+      "#meta": { index: 1 },
+      "mbt::actionTaken": "Increment",
+      "mbt::nondetPicks": {},
+      "outer::inner::count": 42,
+      "other_module::data": "hello"
+    }
+    const result = stripMetadata(raw)
+    expect(result).toEqual({
+      "outer::inner::count": 42,
+      "other_module::data": "hello"
+    })
+  })
+})
+
+describe("replayTrace with module-qualified state keys", () => {
+  it.effect("deserializeState receives module-qualified keys", () =>
+    Effect.gen(function*() {
+      const receivedRaws: Array<unknown> = []
+
+      const trace: ItfTrace = {
+        vars: ["counter_inner::count", "mbt::actionTaken", "mbt::nondetPicks"],
+        states: [
+          {
+            "#meta": { index: 0 },
+            "mbt::actionTaken": "",
+            "mbt::nondetPicks": {},
+            "counter_inner::count": { "#bigint": "0" }
+          },
+          {
+            "#meta": { index: 1 },
+            "mbt::actionTaken": "Increment",
+            "mbt::nondetPicks": {
+              amount: { tag: "Some", value: { "#bigint": "5" } }
+            },
+            "counter_inner::count": { "#bigint": "5" }
+          }
+        ]
+      }
+
+      const factory = defineDriver(
+        { Increment: { amount: ITFBigInt } },
+        () => ({
+          Increment: () => Effect.void,
+          getState: () => Effect.succeed({ "counter_inner::count": 5n })
+        })
+      )
+      const driver = yield* factory.create()
+
+      yield* replayTrace(
+        trace,
+        0,
+        driver,
+        defaultConfig,
+        stateCheck(
+          (raw) => {
+            receivedRaws.push(raw)
+            return Schema.decodeUnknown(
+              Schema.Struct({ "counter_inner::count": ITFBigInt })
+            )(raw).pipe(Effect.orDie)
+          },
+          (spec, impl) => spec["counter_inner::count"] === impl["counter_inner::count"]
+        ),
+        "test-seed"
+      )
+
+      expect(receivedRaws.length).toBe(1)
+      const received = receivedRaws[0] as Record<string, unknown>
+      expect(Object.keys(received)).toContain("counter_inner::count")
+      expect(Object.keys(received)).not.toContain("#meta")
+      expect(Object.keys(received)).not.toContain("mbt::actionTaken")
+      expect(Object.keys(received)).not.toContain("mbt::nondetPicks")
+    }))
+
+  it.effect("state mismatch error works with module-qualified keys", () =>
+    Effect.gen(function*() {
+      const trace: ItfTrace = {
+        vars: ["mod::x", "mod::y", "mbt::actionTaken", "mbt::nondetPicks"],
+        states: [
+          {
+            "#meta": { index: 0 },
+            "mbt::actionTaken": "",
+            "mbt::nondetPicks": {},
+            "mod::x": { "#bigint": "0" },
+            "mod::y": { "#bigint": "0" }
+          },
+          {
+            "#meta": { index: 1 },
+            "mbt::actionTaken": "Step",
+            "mbt::nondetPicks": {},
+            "mod::x": { "#bigint": "1" },
+            "mod::y": { "#bigint": "2" }
+          }
+        ]
+      }
+
+      const ModState = Schema.Struct({ "mod::x": ITFBigInt, "mod::y": ITFBigInt })
+
+      const factory = defineDriver(
+        { Step: {} },
+        () => ({
+          Step: () => Effect.void,
+          getState: () => Effect.succeed({ "mod::x": 1n, "mod::y": 999n })
+        })
+      )
+      const driver = yield* factory.create()
+
+      const result = yield* replayTrace(
+        trace,
+        0,
+        driver,
+        defaultConfig,
+        stateCheck(
+          (raw) => Schema.decodeUnknown(ModState)(raw).pipe(Effect.orDie),
+          (spec, impl) => spec["mod::x"] === impl["mod::x"] && spec["mod::y"] === impl["mod::y"]
+        ),
+        "test-seed"
+      ).pipe(
+        Effect.match({
+          onFailure: (e) => e,
+          onSuccess: () => undefined
+        })
+      )
+
+      expect(result).toBeInstanceOf(StateMismatchError)
+      if (result instanceof StateMismatchError) {
+        expect(result.message).toContain("State mismatch")
+        expect(result.message).toContain("2n")
+        expect(result.message).toContain("999n")
+      }
+    }))
+})
+
+// ---------------------------------------------------------------------------
+// statePath with module-qualified keys (Rust quint-connect pattern)
+// ---------------------------------------------------------------------------
+
+describe("replayTrace with statePath through qualified key", () => {
+  it.effect("statePath navigates through qualified key to inner record", () =>
+    Effect.gen(function*() {
+      const receivedRaws: Array<unknown> = []
+
+      const trace: ItfTrace = {
+        vars: ["multimod_nested::rc::state", "mbt::actionTaken", "mbt::nondetPicks"],
+        states: [
+          {
+            "#meta": { index: 0 },
+            "mbt::actionTaken": "",
+            "mbt::nondetPicks": {},
+            "multimod_nested::rc::state": {
+              count: { "#bigint": "0" },
+              label: "start"
+            }
+          },
+          {
+            "#meta": { index: 1 },
+            "mbt::actionTaken": "Increment",
+            "mbt::nondetPicks": {
+              amount: { tag: "Some", value: { "#bigint": "3" } }
+            },
+            "multimod_nested::rc::state": {
+              count: { "#bigint": "3" },
+              label: "incremented"
+            }
+          }
+        ]
+      }
+
+      const factory = defineDriver(
+        { Increment: { amount: ITFBigInt } },
+        () => ({
+          Increment: () => Effect.void,
+          getState: () => Effect.succeed({ count: 3n, label: "incremented" }),
+          config: () => ({ statePath: ["multimod_nested::rc::state"] })
+        })
+      )
+      const driver = yield* factory.create()
+      const config = { ...defaultConfig, ...driver.config?.() }
+
+      yield* replayTrace(
+        trace,
+        0,
+        driver,
+        config,
+        stateCheck(
+          (raw) => {
+            receivedRaws.push(raw)
+            return Schema.decodeUnknown(
+              Schema.Struct({ count: ITFBigInt, label: Schema.String })
+            )(raw).pipe(Effect.orDie)
+          },
+          (spec, impl) => spec.count === impl.count && spec.label === impl.label
+        ),
+        "test-seed"
+      )
+
+      expect(receivedRaws.length).toBe(1)
+      const received = receivedRaws[0] as Record<string, unknown>
+      // deserializeState should receive the inner record, not the qualified key
+      expect(Object.keys(received)).toContain("count")
+      expect(Object.keys(received)).toContain("label")
+      expect(Object.keys(received).some(k => k.includes("::"))).toBe(false)
+    }))
+})
+
+// ---------------------------------------------------------------------------
 // T1a: deserializeState receives stripped state (no metadata keys)
 // ---------------------------------------------------------------------------
 
