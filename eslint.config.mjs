@@ -132,7 +132,7 @@ export default [
   // Dead export detection (import-x supports flat config, unlike import/no-unused-modules)
   {
     files: ["src/**/*.ts"],
-    ignores: ["src/index.ts", "src/effect.ts", "src/vitest.ts", "src/zod.ts"],
+    ignores: ["src/index.ts", "src/effect.ts", "src/vitest.ts", "src/zod.ts", "src/vitest-simple.ts"],
     plugins: {
       "import-x": importX
     },

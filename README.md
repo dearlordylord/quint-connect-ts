@@ -31,6 +31,8 @@ pnpm add @firfi/quint-connect effect @effect/platform-node
 pnpm add -D @effect/vitest
 ```
 
+**Requirements:** Node.js 21+ (for `import.meta.dirname`), ESM (`"type": "module"` in package.json).
+
 ## Usage
 
 Given a Quint spec `counter.qnt`:
@@ -40,7 +42,7 @@ module counter {
   var count: int
   action init = { count' = 0 }
   action Increment = {
-    nondet amount = 1.to(10).oneOf()
+    nondet amount = Set(1, 2, 3).oneOf()
     count' = count + amount
   }
   action step = Increment
@@ -86,6 +88,22 @@ Per-field pick schemas use [Standard Schema](https://github.com/standard-schema/
 
 State checking is optional — omit `stateCheck` for smoke-testing (verifying the driver doesn't crash on spec actions).
 
+### ITF Type Mappings
+
+All Quint values are automatically transformed from ITF encoding to native JS types before schema validation:
+
+| Quint type | JS type | Schema |
+|---|---|---|
+| `int` | `bigint` | `ITFBigInt` / `z.bigint()` |
+| `str` | `string` | `z.string()` |
+| `bool` | `boolean` | `z.boolean()` |
+| `Set(T)` | `Set<T>` | `ITFSet(inner)` / `z.set(inner)` |
+| `T -> U` (Map) | `Map<K,V>` | `ITFMap(k, v)` / `z.map(k, v)` |
+| `(T1, T2)` (Tuple) | `[T1, T2]` | `z.tuple([...])` |
+| `{ field: T }` (Record) | `{ field: T }` | `z.object({ field: ... })` |
+
+**Note:** All Quint `int` values become `bigint`, not `number`. Use `0n` literals and `z.bigint()` / `ITFBigInt`.
+
 See [examples/counter/counter.test.ts](examples/counter/counter.test.ts) for a complete runnable vitest example.
 
 ### Effect API
@@ -93,8 +111,7 @@ See [examples/counter/counter.test.ts](examples/counter/counter.test.ts) for a c
 For full control (custom error channels, services, resource management), import from `@firfi/quint-connect/effect`:
 
 ```ts
-import { defineDriver, quintRun, stateCheck } from "@firfi/quint-connect/effect"
-import { ITFBigInt } from "@firfi/itf-trace-parser/effect"
+import { defineDriver, quintRun, stateCheck, ITFBigInt } from "@firfi/quint-connect/effect"
 import { Effect, Schema } from "effect"
 import { NodeContext } from "@effect/platform-node"
 
@@ -131,16 +148,18 @@ const result = await Effect.runPromise(
 console.log(result.tracesReplayed, result.seed)
 ```
 
+No `Effect.scoped` needed — resource management (temp directories) is handled internally by `quintRun`.
+
 See [examples/counter/counter-effect.test.ts](examples/counter/counter-effect.test.ts) for a complete runnable vitest example.
 
 ## API
 
 ### Simple API (`@firfi/quint-connect`)
 
-- **`defineDriver(schema, factory)`** — define a typed driver with per-field Standard Schema picks. `schema` maps action names to `{ fieldName: StandardSchema }`. `factory` returns handlers (with inferred pick types) + optional `getState`/`config`. Compile error if a handler is missing.
+- **`defineDriver(schema, factory)`** — define a typed driver with per-field Standard Schema picks. `schema` maps action names to `{ fieldName: StandardSchema }`. `factory` returns handlers (with inferred pick types) + optional `getState`/`config`. Compile error if a handler is missing. Actions with no `nondet` picks use an empty schema: `{ Toggle: {} }`.
 - **`defineDriver(factory)`** — define a raw driver. `factory` returns `{ step, getState?, config? }`. See [Raw mode](#raw-mode).
 - **`pickFrom(nondetPicks, key, schema)`** — extract a single pick from raw nondet picks: unwrap Quint Option, transform ITF value, validate with Standard Schema. Returns `T | undefined`.
-- **`stateCheck(deserialize, compare)`** — helper that infers the state type from `deserialize` and contextually types `compare`'s parameters. Workaround for TypeScript's inability to infer generics across sibling callbacks in an object literal.
+- **`stateCheck(deserialize, compare)`** — helper that infers the state type from `deserialize` and contextually types `compare`'s parameters. Needed because TypeScript cannot infer generic type parameters across sibling callbacks in an object literal.
 - **`run(opts)`** — generate traces and replay them through a driver. Returns `Promise<{ tracesReplayed, seed }>`.
 
 ### Effect API (`@firfi/quint-connect/effect`)
@@ -159,18 +178,18 @@ Shared by `run`, `quintRun`, and `generateTraces`:
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `spec` | `string` | *required* | Path to the `.qnt` spec file |
-| `seed` | `string` | random | RNG seed for reproducible runs. Also reads `QUINT_SEED` env var. |
+| `seed` | `string` | random | RNG seed for reproducible runs. Also reads `QUINT_SEED` env var as fallback. When omitted, a random hex seed (e.g. `0x138ff8c9`) is generated and returned in `result.seed` for reproducibility. |
 | `nTraces` | `number` | `10` | Number of traces to generate |
 | `maxSteps` | `number` | quint default | Maximum steps per trace |
 | `maxSamples` | `number` | quint default | Maximum samples before giving up on finding a valid step |
 | `init` | `string` | quint default | Name of the init action |
 | `step` | `string` | quint default | Name of the step action |
-| `main` | `string` | quint default | Name of the main module |
+| `main` | `string` | quint default | Name of the main module. Required when the `.qnt` file contains multiple modules. |
 | `backend` | `"typescript" \| "rust"` | `"typescript"` | Simulation backend. TypeScript works out of the box; `"rust"` requires the Rust evaluator. |
 | `invariants` | `string[]` | — | Invariant names to check during simulation |
 | `witnesses` | `string[]` | — | Witness names to report |
-| `verbose` | `boolean` | `false` | Enable `QUINT_VERBOSE` for quint |
-| `traceDir` | `string` | temp dir | Directory to write ITF trace files (kept after run) |
+| `verbose` | `boolean` | `false` | Sets `QUINT_VERBOSE=true`. Quint logs detailed simulation output to stderr. |
+| `traceDir` | `string` | temp dir | Directory to write ITF trace files. Files are kept after run. Useful for debugging — inspect generated traces when a test fails. |
 
 `run` additionally accepts:
 

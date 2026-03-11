@@ -21,6 +21,10 @@
     "./zod": {
       "types": "./dist/zod.d.ts",
       "default": "./dist/zod.js"
+    },
+    "./vitest-simple": {
+      "types": "./dist/vitest-simple.d.ts",
+      "default": "./dist/vitest-simple.js"
     }
   },
   "files": [

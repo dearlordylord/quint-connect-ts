@@ -17,7 +17,7 @@ export const quintTest = <S, Actions extends SimpleActionMap>(
   timeout?: number | undefined
 ): void => {
   test(name, async () => {
-    await run(opts)
+    return await run(opts)
   }, timeout ?? DEFAULT_TIMEOUT)
 }
 
@@ -29,7 +29,6 @@ export const quintIt = <S, Actions extends PartialActionMap<E, never>, E>(
   it.effect(name, () =>
     quintRun(opts).pipe(
       Effect.provide(NodeContext.layer),
-      Effect.scoped,
-      Effect.asVoid
+      Effect.scoped
     ), { timeout: timeout ?? DEFAULT_TIMEOUT })
 }
