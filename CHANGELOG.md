@@ -1,5 +1,24 @@
 # @firfi/quint-connect
 
+## 0.4.0
+
+### Minor Changes
+
+- ### Bug fixes
+
+  - Fix `instanceof` for `TraceReplayError` / `StateMismatchError` — errors are now thrown directly instead of wrapped by Effect
+  - Strip `#meta` and `mbt::*` metadata keys from state before comparison
+  - StateMismatchError includes expected/actual JSON in message
+  - Init action error hints at known Quint TypeScript backend bug
+  - Fix stale dist and tsbuildinfo in published package
+
+  ### New features
+
+  - New `@firfi/quint-connect/zod` entry point — re-exports `ITFBigInt`, `ITFSet`, `ITFMap`, `TraceCodec` from `@firfi/itf-trace-parser/zod`
+  - New `@firfi/quint-connect/vitest-simple` entry point — `quintTest` helper without `@effect/vitest` dependency
+  - `quintTest` and `quintIt` now return the run result
+  - `effect`, `@effect/platform-node`, `zod`, `@effect/vitest` declared as optional peer dependencies
+
 ## 0.3.2
 
 ### Patch Changes
