@@ -8,6 +8,7 @@ import { ITFBigInt } from "@firfi/itf-trace-parser/effect"
 import { ITFBigInt as ITFBigIntZod } from "@firfi/itf-trace-parser/zod"
 import { z } from "zod"
 
+import { QuintError } from "../src/cli/quint.js"
 import type { Config, Driver, PartialActionMap } from "../src/driver/types.js"
 import { defineDriver, stateCheck } from "../src/effect.js"
 import { quintRun, TraceReplayError } from "../src/runner/runner.js"
@@ -250,6 +251,73 @@ describe("Integration: nested state spec with statePath", () => {
 
       expect(result.tracesReplayed).toBeGreaterThan(0)
       expect(result.seed).toBe("1")
+    }).pipe(
+      Effect.provide(NodeContext.layer),
+      Effect.scoped
+    ), { timeout: 30000 })
+})
+
+const createPartialConfigDriverFactory = () =>
+  defineDriver(
+    { Increment: { amount: ITFBigInt } },
+    () => {
+      let count = 0n
+      return {
+        Increment: ({ amount }) =>
+          Effect.sync(() => {
+            count += amount
+          }),
+        getState: () => Effect.succeed({ count }),
+        config: () => ({ statePath: ["routingState"] })
+      }
+    }
+  )
+
+describe("Integration: partial config", () => {
+  it.effect("works with config that only sets statePath (no nondetPath)", () =>
+    Effect.gen(function*() {
+      const result = yield* quintRun({
+        spec: path.join(specDir, "nested.qnt"),
+        nTraces: 3,
+        maxSamples: 3,
+        maxSteps: 5,
+        seed: "1",
+        driverFactory: createPartialConfigDriverFactory(),
+        stateCheck: stateCheck(
+          (raw) => Schema.decodeUnknown(NestedStateSchema)(raw).pipe(Effect.orDie),
+          (spec, impl) => spec.count === impl.count
+        )
+      })
+
+      expect(result.tracesReplayed).toBeGreaterThan(0)
+      expect(result.seed).toBe("1")
+    }).pipe(
+      Effect.provide(NodeContext.layer),
+      Effect.scoped
+    ), { timeout: 30000 })
+})
+
+describe("Integration: QuintError includes stderr", () => {
+  it.effect("includes stderr in error message for nonexistent spec", () =>
+    Effect.gen(function*() {
+      const result = yield* quintRun({
+        spec: path.join(specDir, "nonexistent.qnt"),
+        nTraces: 1,
+        maxSteps: 3,
+        seed: "1",
+        driverFactory: createStatelessCounterDriverFactory()
+      }).pipe(
+        Effect.match({
+          onFailure: (error) => error,
+          onSuccess: () => undefined
+        })
+      )
+
+      expect(result).toBeInstanceOf(QuintError)
+      if (result instanceof QuintError) {
+        expect(result.message).toContain("quint run failed with exit code")
+        expect(result.message.length).toBeGreaterThan("quint run failed with exit code 1".length)
+      }
     }).pipe(
       Effect.provide(NodeContext.layer),
       Effect.scoped

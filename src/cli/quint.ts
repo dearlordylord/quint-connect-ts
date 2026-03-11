@@ -115,7 +115,9 @@ const runAndReadTraces = (
     )
     if (exitCode !== 0) {
       return yield* new QuintError({
-        message: `quint run failed with exit code ${exitCode}`,
+        message: stderr
+          ? `quint run failed with exit code ${exitCode}:\n${stderr.trim()}`
+          : `quint run failed with exit code ${exitCode}`,
         stderr,
         exitCode
       })

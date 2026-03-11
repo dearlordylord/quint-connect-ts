@@ -123,8 +123,9 @@ export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
     for (const [stepIndex, rawState] of trace.states.entries()) {
       if (stepIndex === 0) continue // skip init state
 
-      const { action, nondetPicks } = config.nondetPath.length > 0
-        ? yield* extractFromNondetPath(rawState, config.nondetPath, traceIndex, stepIndex)
+      const nondetPath = config.nondetPath ?? []
+      const { action, nondetPicks } = nondetPath.length > 0
+        ? yield* extractFromNondetPath(rawState, nondetPath, traceIndex, stepIndex)
         : yield* Effect.map(extractMbtMeta(rawState, traceIndex, stepIndex), (meta) => ({
           action: meta["mbt::actionTaken"],
           nondetPicks: new Map(Object.entries(meta["mbt::nondetPicks"]))
@@ -200,8 +201,9 @@ export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
             action
           })
         }
-        const specStateRaw = config.statePath.length > 0
-          ? resolveNestedValue(rawState, config.statePath)
+        const statePath = config.statePath ?? []
+        const specStateRaw = statePath.length > 0
+          ? resolveNestedValue(rawState, statePath)
           : stripMetadata(rawState)
         const specState = yield* stateCheck.deserializeState(specStateRaw)
         const implState = yield* driver.getState()
@@ -269,7 +271,7 @@ export const quintRun = <
       ({ trace, traceIndex }) =>
         Effect.gen(function*() {
           const driver = yield* opts.driverFactory.create()
-          const config = driver.config?.() ?? defaultConfig
+          const config = { ...defaultConfig, ...driver.config?.() }
           yield* replayTrace(
             trace,
             traceIndex,

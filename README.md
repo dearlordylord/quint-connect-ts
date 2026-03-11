@@ -31,7 +31,7 @@ pnpm add @firfi/quint-connect effect @effect/platform-node
 pnpm add -D @effect/vitest
 ```
 
-**Requirements:** Node.js 21+ (for `import.meta.dirname`), ESM (`"type": "module"` in package.json).
+**Requirements:** Node.js 21+ (for `import.meta.dirname`), ESM (`"type": "module"` in package.json), [Quint CLI](https://github.com/informalsystems/quint) (`npx @informalsystems/quint` runs without global install).
 
 ## Usage
 
@@ -154,6 +154,32 @@ No `Effect.scoped` needed — resource management (temp directories) is handled 
 
 See [examples/counter/counter-effect.test.ts](examples/counter/counter-effect.test.ts) for a complete runnable vitest example.
 
+### Vitest Helpers
+
+Simple API helper (no Effect dependency needed):
+
+```ts
+import { quintTest } from "@firfi/quint-connect/vitest-simple"
+
+quintTest("my test", {
+  spec: "./myspec.qnt",
+  driver: myDriver,
+})
+```
+
+Effect API helper (requires `@effect/vitest`):
+
+```ts
+import { quintIt } from "@firfi/quint-connect/vitest"
+
+quintIt("my test", {
+  spec: "./myspec.qnt",
+  driverFactory: myDriver,
+})
+```
+
+Both accept an optional third argument for timeout (default: 30s).
+
 ## API
 
 ### Simple API (`@firfi/quint-connect`)
@@ -223,6 +249,49 @@ var routingState: { count: int }
 ```
 
 Set `statePath: ["routingState"]` so that `deserializeState` receives `{ count: ... }` directly instead of `{ routingState: { count: ... }, "mbt::actionTaken": ..., ... }`.
+
+### Additional Exports
+
+**`@firfi/quint-connect/effect`** also exports: `ITFList`, `ITFTuple`, `ITFVariant`, `ITFUnserializable`, `ItfTrace`, `MbtMeta`, `UntypedTraceSchema`, `generateTraces`, `defaultConfig`.
+
+**`@firfi/quint-connect`** also exports: `transformITFValue`, `defaultConfig`.
+
+**`@firfi/quint-connect/zod`** also exports: `TraceCodec`.
+
+### Error Handling
+
+The library exports typed error classes for programmatic error handling:
+
+| Error | Trigger |
+|---|---|
+| `TraceReplayError` | Unknown action, handler failure, decode failure |
+| `StateMismatchError` | `compareState` returns `false` |
+| `QuintError` | `quint run` exits non-zero (includes stderr output) |
+| `QuintNotFoundError` | `quint` CLI not found |
+| `NoTracesError` | `quint run` produced no traces |
+
+**Simple API** — use `instanceof`:
+
+```ts
+import { run, StateMismatchError, TraceReplayError } from "@firfi/quint-connect"
+
+try {
+  await run(opts)
+} catch (e) {
+  if (e instanceof StateMismatchError) {
+    console.log(e.expected, e.actual, e.traceIndex, e.stepIndex)
+  }
+}
+```
+
+**Effect API** — use `catchTag`:
+
+```ts
+quintRun(opts).pipe(
+  Effect.catchTag("StateMismatchError", (e) =>
+    Effect.log(e.expected, e.actual)),
+)
+```
 
 ### Raw mode
 

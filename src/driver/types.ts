@@ -1,8 +1,8 @@
 import type { Effect, Schema } from "effect"
 
 export interface Config {
-  readonly statePath: ReadonlyArray<string>
-  readonly nondetPath: ReadonlyArray<string>
+  readonly statePath?: ReadonlyArray<string> | undefined
+  readonly nondetPath?: ReadonlyArray<string> | undefined
 }
 
 export const defaultConfig: Config = {
