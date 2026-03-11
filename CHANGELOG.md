@@ -1,5 +1,21 @@
 # @firfi/quint-connect
 
+## 0.4.2
+
+### Patch Changes
+
+- ### Bug fixes
+
+  - Handler throws in Simple API now wrapped in `TraceReplayError` with trace/step context (previously propagated as raw errors without `instanceof` support)
+
+  ### Documentation
+
+  - Document seed format requirement (must be big integer: decimal or hex)
+  - Document `TraceReplayError` properties (`traceIndex`, `stepIndex`, `action`, `cause`)
+  - Clarify `statePath` + `getState` interaction
+  - Note Zod 4+ requirement in install instructions
+  - Fix `driver` type in RunOptions table
+
 ## 0.4.1
 
 ### Patch Changes
