@@ -21,7 +21,7 @@ Spawns `quint run --mbt`, parses ITF traces, replays them through a user-impleme
 # Simple API (default):
 pnpm add @firfi/quint-connect
 
-# If using Zod ITF schemas (ITFBigInt, ITFSet, ITFMap):
+# If using Zod ITF schemas (ITFBigInt, ITFSet, ITFMap) — requires Zod 4+:
 pnpm add zod
 
 # For Effect API:
@@ -206,7 +206,7 @@ Shared by `run`, `quintRun`, and `generateTraces`:
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `spec` | `string` | *required* | Path to the `.qnt` spec file |
-| `seed` | `string` | random | RNG seed for reproducible runs. Also reads `QUINT_SEED` env var as fallback. When omitted, a random hex seed (e.g. `0x138ff8c9`) is generated and returned in `result.seed` for reproducibility. |
+| `seed` | `string` | random | RNG seed for reproducible runs. Must be a big integer: decimal (`"42"`) or hex (`"0x138ff8c9"`). Also reads `QUINT_SEED` env var as fallback. When omitted, a random hex seed is generated and returned in `result.seed` for reproducibility. |
 | `nTraces` | `number` | `10` | Number of traces to generate |
 | `maxSteps` | `number` | quint default | Maximum steps per trace |
 | `maxSamples` | `number` | quint default | Maximum samples before giving up on finding a valid step |
@@ -223,7 +223,7 @@ Shared by `run`, `quintRun`, and `generateTraces`:
 
 | Field | Type | Description |
 |---|---|---|
-| `driver` | `() => { actions, getState?, config? }` | Creates a fresh driver per trace. Use `defineDriver` to create. |
+| `driver` | `() => SimpleDriver<State>` | Creates a fresh driver per trace. Use `defineDriver` to create. |
 | `stateCheck` | `stateCheck(deserialize, compare)` | Optional. Compare spec vs impl state after each step. Use `stateCheck()` helper for type inference. |
 
 `quintRun` additionally accepts:
@@ -249,6 +249,8 @@ var routingState: { count: int }
 ```
 
 Set `statePath: ["routingState"]` so that `deserializeState` receives `{ count: ... }` directly instead of `{ routingState: { count: ... }, "mbt::actionTaken": ..., ... }`.
+
+When using `statePath`, both `deserializeState` and `getState` should work with the scoped state shape (e.g. `{ count }`, not `{ routingState: { count } }`).
 
 ### Additional Exports
 
@@ -292,6 +294,8 @@ quintRun(opts).pipe(
     Effect.log(e.expected, e.actual)),
 )
 ```
+
+`StateMismatchError` has `traceIndex`, `stepIndex`, `expected`, `actual`. `TraceReplayError` has `traceIndex`, `stepIndex`, `action`, `cause`.
 
 ### Raw mode
 

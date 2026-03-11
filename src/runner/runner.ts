@@ -141,9 +141,8 @@ export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
       }
 
       if (driver.step !== undefined) {
-        yield* Effect.mapError(
-          driver.step(action, nondetPicks),
-          (e: E) =>
+        yield* driver.step(action, nondetPicks).pipe(
+          Effect.mapError((e: E) =>
             new TraceReplayError({
               message: `step failed: ${String(e)}`,
               traceIndex,
@@ -151,6 +150,18 @@ export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
               action,
               cause: e
             })
+          ),
+          Effect.catchAllDefect((defect) =>
+            Effect.fail(
+              new TraceReplayError({
+                message: `step failed: ${String(defect)}`,
+                traceIndex,
+                stepIndex,
+                action,
+                cause: defect
+              })
+            )
+          )
         )
       } else {
         const actionDef = driver.actions[action]
@@ -178,9 +189,8 @@ export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
             })
         )
 
-        yield* Effect.mapError(
-          actionDef.handler(decodedPicks),
-          (e: E) =>
+        yield* actionDef.handler(decodedPicks).pipe(
+          Effect.mapError((e: E) =>
             new TraceReplayError({
               message: `Action handler failed: ${String(e)}`,
               traceIndex,
@@ -188,6 +198,18 @@ export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
               action,
               cause: e
             })
+          ),
+          Effect.catchAllDefect((defect) =>
+            Effect.fail(
+              new TraceReplayError({
+                message: `Action handler failed: ${String(defect)}`,
+                traceIndex,
+                stepIndex,
+                action,
+                cause: defect
+              })
+            )
+          )
         )
       }
 

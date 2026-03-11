@@ -378,4 +378,34 @@ describe("Simple API: error unwrapping", () => {
       }
     }
   })
+
+  it("handler throw is wrapped in TraceReplayError", { timeout: 30000 }, async () => {
+    try {
+      await run({
+        spec: path.join(specDir, "counter.qnt"),
+        nTraces: 1,
+        maxSamples: 2,
+        maxSteps: 3,
+        seed: "1",
+        driver: defineDriverSimple(
+          { Increment: { amount: ITFBigIntZod } },
+          () => ({
+            Increment: () => {
+              throw new Error("handler crash")
+            }
+          })
+        )
+      })
+      expect.unreachable("run() should have thrown")
+    } catch (e: unknown) {
+      expect(e).toBeInstanceOf(SimpleTraceReplayError)
+      if (e instanceof SimpleTraceReplayError) {
+        expect(e._tag).toBe("TraceReplayError")
+        expect(e.message).toContain("handler crash")
+        expect(e.traceIndex).toBeDefined()
+        expect(e.stepIndex).toBeDefined()
+        expect(e.action).toBeDefined()
+      }
+    }
+  })
 })
