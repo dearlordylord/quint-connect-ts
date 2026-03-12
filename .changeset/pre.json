@@ -1,0 +1,8 @@
+{
+  "mode": "pre",
+  "tag": "effect4",
+  "initialVersions": {
+    "@firfi/quint-connect": "0.4.2"
+  },
+  "changesets": []
+}
