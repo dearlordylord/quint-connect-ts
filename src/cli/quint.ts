@@ -1,18 +1,16 @@
-import * as Command from "@effect/platform/Command"
-import type * as CommandExecutor from "@effect/platform/CommandExecutor"
-import * as FileSystem from "@effect/platform/FileSystem"
-import * as Path from "@effect/platform/Path"
-import { Effect, Schema, Stream } from "effect"
+import { Effect, FileSystem, Path, Schema, Stream } from "effect"
 import type { Scope } from "effect"
+import { ChildProcess } from "effect/unstable/process"
+import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { ItfTrace } from "../itf/schema.js"
 
-export class QuintError extends Schema.TaggedError<QuintError>()("QuintError", {
+export class QuintError extends Schema.TaggedErrorClass<QuintError>()("QuintError", {
   message: Schema.String,
   stderr: Schema.optional(Schema.String),
   exitCode: Schema.optional(Schema.Number)
 }) {}
 
-export class QuintNotFoundError extends Schema.TaggedError<QuintNotFoundError>()("QuintNotFoundError", {
+export class QuintNotFoundError extends Schema.TaggedErrorClass<QuintNotFoundError>()("QuintNotFoundError", {
   message: Schema.String
 }) {}
 
@@ -92,16 +90,19 @@ const runAndReadTraces = (
 ): Effect.Effect<
   ReadonlyArray<ItfTrace>,
   QuintError | QuintNotFoundError,
-  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor | Scope.Scope
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner | Scope.Scope
 > =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const args = buildRunArgs(opts, outDir)
-    const baseCmd = Command.make("npx", "@informalsystems/quint", ...args)
-    const cmd = opts.verbose === true ? Command.env(baseCmd, { QUINT_VERBOSE: "true" }) : baseCmd
+    const cmd = ChildProcess.make(
+      "npx",
+      ["@informalsystems/quint", ...args],
+      opts.verbose === true ? { env: { QUINT_VERBOSE: "true" }, extendEnv: true } : undefined
+    )
     const proc = yield* Effect.mapError(
-      Command.start(cmd),
+      Effect.fromYieldable(cmd),
       (e) => new QuintNotFoundError({ message: `Failed to start quint: ${e}` })
     )
     const decoder = new TextDecoder()
@@ -109,7 +110,7 @@ const runAndReadTraces = (
       Effect.all([
         proc.exitCode,
         Stream.runDrain(proc.stdout),
-        Stream.runFold(proc.stderr, "", (acc, chunk) => acc + decoder.decode(chunk))
+        Stream.runFold(proc.stderr, () => "", (acc, chunk) => acc + decoder.decode(chunk))
       ], { concurrency: "unbounded" }),
       (e) => new QuintError({ message: `quint process error: ${e}` })
     )
@@ -140,7 +141,7 @@ const runAndReadTraces = (
         catch: (e) => new QuintError({ message: `Invalid JSON in trace file ${file}: ${e}` })
       })
       const trace = yield* Effect.mapError(
-        Schema.decodeUnknown(ItfTrace)(json),
+        Schema.decodeUnknownEffect(ItfTrace)(json),
         (e) => new QuintError({ message: `Failed to parse ITF trace ${file}: ${e}` })
       )
       traces.push(trace)
@@ -154,7 +155,7 @@ const generateTracesWithTraceDir = (
 ): Effect.Effect<
   ReadonlyArray<ItfTrace>,
   QuintError | QuintNotFoundError,
-  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner
 > =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -170,7 +171,7 @@ const generateTracesWithTempDir = (
 ): Effect.Effect<
   ReadonlyArray<ItfTrace>,
   QuintError | QuintNotFoundError,
-  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner
 > =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -186,7 +187,7 @@ export const generateTraces = (
 ): Effect.Effect<
   ReadonlyArray<ItfTrace>,
   QuintError | QuintNotFoundError,
-  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner
 > =>
   opts.traceDir !== undefined
     ? generateTracesWithTraceDir(opts, opts.traceDir)

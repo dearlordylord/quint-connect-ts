@@ -1,5 +1,5 @@
-import { NodeContext } from "@effect/platform-node"
-import { Cause, Effect, Exit, Option, Schema } from "effect"
+import { NodeServices } from "@effect/platform-node"
+import { Cause, Effect, Exit, Option, Result, Schema } from "effect"
 
 import { transformITFValue } from "@firfi/itf-trace-parser"
 import type { StandardSchemaV1 } from "@standard-schema/spec"
@@ -140,7 +140,7 @@ export function defineDriver(
 const wrapAction = (
   actionDef: AnySimpleActionDef
 ): AnyActionDef => {
-  const fields: Record<string, Schema.Schema<unknown, unknown, never>> = {}
+  const fields: Record<string, Schema.Schema<unknown>> = {}
   for (const key of Object.keys(actionDef.picks)) {
     fields[key] = Schema.Unknown
   }
@@ -210,13 +210,13 @@ export const run = <S, Actions extends SimpleActionMap>(
   })
 
   return Effect.runPromiseExit(
-    program.pipe(Effect.provide(NodeContext.layer))
+    program.pipe(Effect.provide(NodeServices.layer))
   ).then((exit) => {
     if (Exit.isSuccess(exit)) return exit.value
-    const failure = Cause.failureOption(exit.cause)
+    const failure = Cause.findErrorOption(exit.cause)
     if (Option.isSome(failure)) throw failure.value
-    const defect = Cause.dieOption(exit.cause)
-    if (Option.isSome(defect)) throw defect.value
+    const defect = Cause.findDefect(exit.cause)
+    if (Result.isSuccess(defect)) throw defect.success
     throw new Error("Unknown error in quint-connect run()")
   })
 }

@@ -1,7 +1,6 @@
-import type * as CommandExecutor from "@effect/platform/CommandExecutor"
-import type * as FileSystem from "@effect/platform/FileSystem"
-import type * as Path from "@effect/platform/Path"
+import type { FileSystem, Path } from "effect"
 import { Array as Arr, Effect, Predicate, Schema } from "effect"
+import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import type { QuintError, QuintNotFoundError, RunOptions } from "../cli/quint.js"
 import { generateTraces } from "../cli/quint.js"
 import type { AnyActionDef, Config, Driver, PartialActionMap, StateComparator } from "../driver/types.js"
@@ -9,16 +8,16 @@ import { defaultConfig } from "../driver/types.js"
 import type { ItfTrace, MbtMeta } from "../itf/schema.js"
 import { ItfOption, MbtMeta as MbtMetaSchema } from "../itf/schema.js"
 
-export class StateMismatchError extends Schema.TaggedError<StateMismatchError>()("StateMismatchError", {
+export class StateMismatchError extends Schema.TaggedErrorClass<StateMismatchError>()("StateMismatchError", {
   message: Schema.String,
   traceIndex: Schema.Number,
   stepIndex: Schema.Number,
   expected: Schema.Unknown,
   actual: Schema.Unknown,
-  showDiff: Schema.optionalWith(Schema.Boolean, { default: () => true })
+  showDiff: Schema.optional(Schema.Boolean).pipe(Schema.withDecodingDefault(() => true))
 }) {}
 
-export class TraceReplayError extends Schema.TaggedError<TraceReplayError>()("TraceReplayError", {
+export class TraceReplayError extends Schema.TaggedErrorClass<TraceReplayError>()("TraceReplayError", {
   message: Schema.String,
   traceIndex: Schema.Number,
   stepIndex: Schema.Number,
@@ -26,7 +25,7 @@ export class TraceReplayError extends Schema.TaggedError<TraceReplayError>()("Tr
   cause: Schema.optional(Schema.Unknown)
 }) {}
 
-export class NoTracesError extends Schema.TaggedError<NoTracesError>()("NoTracesError", {
+export class NoTracesError extends Schema.TaggedErrorClass<NoTracesError>()("NoTracesError", {
   message: Schema.String
 }) {}
 
@@ -36,7 +35,7 @@ const extractMbtMeta = (
   stepIndex: number
 ): Effect.Effect<MbtMeta, TraceReplayError> =>
   Effect.mapError(
-    Schema.decodeUnknown(MbtMetaSchema)(state),
+    Schema.decodeUnknownEffect(MbtMetaSchema)(state),
     (e) =>
       new TraceReplayError({
         message: `Failed to extract MBT metadata: ${e}`,
@@ -59,7 +58,7 @@ const resolveNestedValue = (
 ): unknown => {
   let current: unknown = obj
   for (const key of path) {
-    if (!Predicate.isRecord(current) || !(key in current)) {
+    if (!Predicate.isObject(current) || !(key in current)) {
       return undefined
     }
     current = current[key]
@@ -76,7 +75,7 @@ const extractFromNondetPath = (
   stepIndex: number
 ): Effect.Effect<{ action: string; nondetPicks: ReadonlyMap<string, unknown> }, TraceReplayError> => {
   const raw = resolveNestedValue(state, nondetPath)
-  if (!Predicate.isRecord(raw) || typeof raw["tag"] !== "string") {
+  if (!Predicate.isObject(raw) || typeof raw["tag"] !== "string") {
     return Effect.fail(
       new TraceReplayError({
         message: `Expected sum type {tag, value} at path ${nondetPath.join(".")}, got: ${JSON.stringify(raw)}`,
@@ -88,7 +87,7 @@ const extractFromNondetPath = (
   }
   const action = raw["tag"]
   const value = raw["value"]
-  const picks = Predicate.isRecord(value) ? new Map(Object.entries(value)) : new Map<string, unknown>()
+  const picks = Predicate.isObject(value) ? new Map(Object.entries(value)) : new Map<string, unknown>()
   return Effect.succeed({ action, nondetPicks: picks })
 }
 
@@ -96,10 +95,10 @@ const buildPicksDecoder = (picksShape: AnyActionDef["picks"]) => {
   const wrappedFields = Object.fromEntries(
     Object.entries(picksShape.fields).map(([key, fieldSchema]) => [
       key,
-      Schema.UndefinedOr(ItfOption(Schema.asSchema(fieldSchema)))
+      Schema.UndefinedOr(ItfOption(fieldSchema))
     ])
   )
-  return Schema.decodeUnknown(Schema.Struct(wrappedFields))
+  return Schema.decodeUnknownEffect(Schema.Struct(wrappedFields))
 }
 
 /** @internal */
@@ -151,7 +150,7 @@ export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
               cause: e
             })
           ),
-          Effect.catchAllDefect((defect) =>
+          Effect.catchDefect((defect) =>
             Effect.fail(
               new TraceReplayError({
                 message: `step failed: ${String(defect)}`,
@@ -199,7 +198,7 @@ export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
               cause: e
             })
           ),
-          Effect.catchAllDefect((defect) =>
+          Effect.catchDefect((defect) =>
             Effect.fail(
               new TraceReplayError({
                 message: `Action handler failed: ${String(defect)}`,
@@ -277,7 +276,7 @@ export const quintRun = <
 ): Effect.Effect<
   { readonly tracesReplayed: number; readonly seed: string },
   E | QuintError | QuintNotFoundError | StateMismatchError | TraceReplayError | NoTracesError,
-  R | FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+  R | FileSystem.FileSystem | Path.Path | ChildProcessSpawner
 > =>
   Effect.gen(function*() {
     const seed = resolveSeed(opts)

@@ -2,13 +2,14 @@ import { describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import { expect } from "vitest"
 
-import { ITFBigInt } from "@firfi/itf-trace-parser/effect"
+import { ITFBigInt } from "../src/itf/effect4-schemas.js"
 
 import { defaultConfig } from "../src/driver/types.js"
 import type { Driver, PartialActionMap } from "../src/driver/types.js"
-import { defineDriver, stateCheck } from "../src/effect.js"
+import { defineDriver } from "../src/effect.js"
 import type { ItfTrace } from "../src/itf/schema.js"
 import { jsonReplacer, replayTrace, StateMismatchError, stripMetadata, TraceReplayError } from "../src/runner/runner.js"
+import { stateCheckCompat as stateCheck } from "./effect4-compat.js"
 
 // ---------------------------------------------------------------------------
 // T1a: stripMetadata
@@ -118,7 +119,7 @@ describe("replayTrace with module-qualified state keys", () => {
         stateCheck(
           (raw) => {
             receivedRaws.push(raw)
-            return Schema.decodeUnknown(
+            return Schema.decodeUnknownEffect(
               Schema.Struct({ "counter_inner::count": ITFBigInt })
             )(raw).pipe(Effect.orDie)
           },
@@ -174,7 +175,7 @@ describe("replayTrace with module-qualified state keys", () => {
         driver,
         defaultConfig,
         stateCheck(
-          (raw) => Schema.decodeUnknown(ModState)(raw).pipe(Effect.orDie),
+          (raw) => Schema.decodeUnknownEffect(ModState)(raw).pipe(Effect.orDie),
           (spec, impl) => spec["mod::x"] === impl["mod::x"] && spec["mod::y"] === impl["mod::y"]
         ),
         "test-seed"
@@ -248,7 +249,7 @@ describe("replayTrace with statePath through qualified key", () => {
         stateCheck(
           (raw) => {
             receivedRaws.push(raw)
-            return Schema.decodeUnknown(
+            return Schema.decodeUnknownEffect(
               Schema.Struct({ count: ITFBigInt, label: Schema.String })
             )(raw).pipe(Effect.orDie)
           },
@@ -314,7 +315,7 @@ describe("replayTrace strips metadata before deserializeState (T1a)", () => {
         stateCheck(
           (raw) => {
             receivedRaws.push(raw)
-            return Schema.decodeUnknown(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie)
+            return Schema.decodeUnknownEffect(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie)
           },
           () => true
         ),
@@ -452,7 +453,7 @@ describe("StateMismatchError contains expected/actual in message (T1c)", () => {
         driver,
         defaultConfig,
         stateCheck(
-          (raw) => Schema.decodeUnknown(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie),
+          (raw) => Schema.decodeUnknownEffect(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie),
           (spec, impl) => spec.count === impl.count
         ),
         "abc123"

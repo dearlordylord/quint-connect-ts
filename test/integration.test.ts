@@ -1,16 +1,16 @@
-import { NodeContext } from "@effect/platform-node"
+import { NodeServices } from "@effect/platform-node"
 import { describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import * as path from "node:path"
 import { expect } from "vitest"
 
-import { ITFBigInt } from "@firfi/itf-trace-parser/effect"
 import { ITFBigInt as ITFBigIntZod } from "@firfi/itf-trace-parser/zod"
 import { z } from "zod"
+import { ITFBigInt } from "../src/itf/effect4-schemas.js"
 
 import { QuintError } from "../src/cli/quint.js"
 import type { Config, Driver, PartialActionMap } from "../src/driver/types.js"
-import { defineDriver, stateCheck } from "../src/effect.js"
+import { defineDriver } from "../src/effect.js"
 import { quintRun, TraceReplayError } from "../src/runner/runner.js"
 import {
   defineDriver as defineDriverSimple,
@@ -20,6 +20,7 @@ import {
   StateMismatchError as SimpleStateMismatchError,
   TraceReplayError as SimpleTraceReplayError
 } from "../src/simple.js"
+import { stateCheckCompat as stateCheck } from "./effect4-compat.js"
 
 const CounterStateSchema = Schema.Struct({
   count: ITFBigInt
@@ -71,7 +72,7 @@ describe("Integration: counter spec", () => {
         seed: "1",
         driverFactory: createCounterDriverFactory(),
         stateCheck: stateCheck(
-          (raw) => Schema.decodeUnknown(CounterStateSchema)(raw).pipe(Effect.orDie),
+          (raw) => Schema.decodeUnknownEffect(CounterStateSchema)(raw).pipe(Effect.orDie),
           (spec, impl) => spec.count === impl.count
         )
       })
@@ -79,7 +80,7 @@ describe("Integration: counter spec", () => {
       expect(result.tracesReplayed).toBeGreaterThan(0)
       expect(result.seed).toBe("1")
     }).pipe(
-      Effect.provide(NodeContext.layer),
+      Effect.provide(NodeServices.layer),
       Effect.scoped
     ), { timeout: 30000 })
 
@@ -94,7 +95,7 @@ describe("Integration: counter spec", () => {
         concurrency: 3,
         driverFactory: createCounterDriverFactory(),
         stateCheck: stateCheck(
-          (raw) => Schema.decodeUnknown(CounterStateSchema)(raw).pipe(Effect.orDie),
+          (raw) => Schema.decodeUnknownEffect(CounterStateSchema)(raw).pipe(Effect.orDie),
           (spec, impl) => spec.count === impl.count
         )
       })
@@ -102,7 +103,7 @@ describe("Integration: counter spec", () => {
       expect(result.tracesReplayed).toBeGreaterThan(0)
       expect(result.seed).toBe("1")
     }).pipe(
-      Effect.provide(NodeContext.layer),
+      Effect.provide(NodeServices.layer),
       Effect.scoped
     ), { timeout: 30000 })
 
@@ -120,7 +121,7 @@ describe("Integration: counter spec", () => {
       expect(result.tracesReplayed).toBeGreaterThan(0)
       expect(result.seed).toBe("1")
     }).pipe(
-      Effect.provide(NodeContext.layer),
+      Effect.provide(NodeServices.layer),
       Effect.scoped
     ), { timeout: 30000 })
 
@@ -147,7 +148,7 @@ describe("Integration: counter spec", () => {
         expect(result.message).toContain("Unknown action")
       }
     }).pipe(
-      Effect.provide(NodeContext.layer),
+      Effect.provide(NodeServices.layer),
       Effect.scoped
     ), { timeout: 30000 })
 })
@@ -203,7 +204,7 @@ describe("Integration: raw mode", () => {
       expect(steps[0].picks).toBeInstanceOf(Map)
       expect(steps[0].picks.has("amount")).toBe(true)
     }).pipe(
-      Effect.provide(NodeContext.layer),
+      Effect.provide(NodeServices.layer),
       Effect.scoped
     ), { timeout: 30000 })
 })
@@ -244,7 +245,7 @@ describe("Integration: nested state spec with statePath", () => {
         seed: "1",
         driverFactory: createNestedDriverFactory(),
         stateCheck: stateCheck(
-          (raw) => Schema.decodeUnknown(NestedStateSchema)(raw).pipe(Effect.orDie),
+          (raw) => Schema.decodeUnknownEffect(NestedStateSchema)(raw).pipe(Effect.orDie),
           (spec, impl) => spec.count === impl.count
         )
       })
@@ -252,7 +253,7 @@ describe("Integration: nested state spec with statePath", () => {
       expect(result.tracesReplayed).toBeGreaterThan(0)
       expect(result.seed).toBe("1")
     }).pipe(
-      Effect.provide(NodeContext.layer),
+      Effect.provide(NodeServices.layer),
       Effect.scoped
     ), { timeout: 30000 })
 })
@@ -314,7 +315,7 @@ describe("Integration: multi-module spec with qualified state keys", () => {
       expect(actions.length).toBeGreaterThan(0)
       expect(actions[0]).toBe("Increment")
     }).pipe(
-      Effect.provide(NodeContext.layer),
+      Effect.provide(NodeServices.layer),
       Effect.scoped
     ), { timeout: 30000 })
 
@@ -343,14 +344,14 @@ describe("Integration: multi-module spec with qualified state keys", () => {
         seed: "1",
         driverFactory: factory,
         stateCheck: stateCheck(
-          (raw) => Schema.decodeUnknown(MultimodStateSchema)(raw).pipe(Effect.orDie),
+          (raw) => Schema.decodeUnknownEffect(MultimodStateSchema)(raw).pipe(Effect.orDie),
           (spec, impl) => spec["multimod::ctr::count"] === impl["multimod::ctr::count"]
         )
       })
 
       expect(result.tracesReplayed).toBeGreaterThan(0)
     }).pipe(
-      Effect.provide(NodeContext.layer),
+      Effect.provide(NodeServices.layer),
       Effect.scoped
     ), { timeout: 30000 })
 })
@@ -399,7 +400,7 @@ describe("Integration: statePath through qualified key", () => {
             if (typeof raw === "object" && raw !== null) {
               rawStates.push({ ...raw as Record<string, unknown> })
             }
-            return Schema.decodeUnknown(MultimodNestedInnerSchema)(raw).pipe(Effect.orDie)
+            return Schema.decodeUnknownEffect(MultimodNestedInnerSchema)(raw).pipe(Effect.orDie)
           },
           (spec, impl) => spec.count === impl.count
         )
@@ -414,7 +415,7 @@ describe("Integration: statePath through qualified key", () => {
       expect(keys).toContain("label")
       expect(keys.some(k => k.includes("::"))).toBe(false)
     }).pipe(
-      Effect.provide(NodeContext.layer),
+      Effect.provide(NodeServices.layer),
       Effect.scoped
     ), { timeout: 30000 })
 })
@@ -446,7 +447,7 @@ describe("Integration: partial config", () => {
         seed: "1",
         driverFactory: createPartialConfigDriverFactory(),
         stateCheck: stateCheck(
-          (raw) => Schema.decodeUnknown(NestedStateSchema)(raw).pipe(Effect.orDie),
+          (raw) => Schema.decodeUnknownEffect(NestedStateSchema)(raw).pipe(Effect.orDie),
           (spec, impl) => spec.count === impl.count
         )
       })
@@ -454,7 +455,7 @@ describe("Integration: partial config", () => {
       expect(result.tracesReplayed).toBeGreaterThan(0)
       expect(result.seed).toBe("1")
     }).pipe(
-      Effect.provide(NodeContext.layer),
+      Effect.provide(NodeServices.layer),
       Effect.scoped
     ), { timeout: 30000 })
 })
@@ -481,7 +482,7 @@ describe("Integration: QuintError includes stderr", () => {
         expect(result.message.length).toBeGreaterThan("quint run failed with exit code 1".length)
       }
     }).pipe(
-      Effect.provide(NodeContext.layer),
+      Effect.provide(NodeServices.layer),
       Effect.scoped
     ), { timeout: 30000 })
 })

@@ -8,8 +8,9 @@ import { Effect, Schema } from "effect"
 import * as path from "node:path"
 import { describe } from "vitest"
 
-import { defineDriver, ITFBigInt, stateCheck } from "../../src/effect.js"
+import { defineDriver, ITFBigInt } from "../../src/effect.js"
 import { quintIt } from "../../src/vitest.js"
+import { stateCheckCompat as stateCheck } from "../../test/effect4-compat.js"
 
 // 1. Define state schema (ITFBigInt handles {"#bigint":"N"} → bigint)
 const CounterState = Schema.Struct({ count: ITFBigInt })
@@ -35,7 +36,7 @@ describe("Counter MBT (Effect)", () => {
     spec: path.join(import.meta.dirname, "specs", "counter.qnt"),
     driverFactory: counterDriver,
     stateCheck: stateCheck(
-      (raw) => Schema.decodeUnknown(CounterState)(raw).pipe(Effect.orDie),
+      (raw) => Schema.decodeUnknownEffect(CounterState)(raw).pipe(Effect.orDie),
       (spec, impl) => spec.count === impl.count
     )
   })

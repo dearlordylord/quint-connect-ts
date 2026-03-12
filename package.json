@@ -73,10 +73,10 @@
   "license": "Apache-2.0",
   "peerDependencies": {
     "vitest": ">=1.0.0",
-    "effect": "^3.0.0",
-    "@effect/platform-node": ">=0.100.0",
+    "effect": "^4.0.0-beta.0",
+    "@effect/platform-node": "^4.0.0-beta.0",
     "zod": ">=4.0.0",
-    "@effect/vitest": ">=0.20.0"
+    "@effect/vitest": "^4.0.0-beta.0"
   },
   "peerDependenciesMeta": {
     "vitest": {
@@ -96,11 +96,10 @@
     }
   },
   "dependencies": {
-    "@effect/platform": "^0.94.5",
-    "@effect/platform-node": "^0.104.1",
+    "@effect/platform-node": "^4.0.0-beta.31",
     "@firfi/itf-trace-parser": "0.1.2",
     "@standard-schema/spec": "^1.1.0",
-    "effect": "^3.19.15"
+    "effect": "^4.0.0-beta.31"
   },
   "lint-staged": {
     "*.ts": "eslint --fix"
@@ -115,7 +114,7 @@
     "@changesets/cli": "^2.30.0",
     "@effect/eslint-plugin": "^0.3.2",
     "@effect/language-service": "^0.73.1",
-    "@effect/vitest": "latest",
+    "@effect/vitest": "4.0.0-beta.31",
     "@eslint/compat": "^2.0.2",
     "@types/node": "^25.1.0",
     "@typescript-eslint/parser": "^8.54.0",

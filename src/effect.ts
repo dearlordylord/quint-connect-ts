@@ -42,7 +42,7 @@ export const stateCheck = <S>(
 ): StateCheck<S> => ({ compareState, deserializeState })
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type EffectPicksSchema = Record<string, Schema.Schema<any, any, never>>
+type EffectPicksSchema = Record<string, Schema.Schema<any>>
 
 type EffectHandlerPicks<Fields extends EffectPicksSchema> = {
   readonly [K in keyof Fields]: Schema.Schema.Type<Fields[K]>
@@ -50,7 +50,7 @@ type EffectHandlerPicks<Fields extends EffectPicksSchema> = {
 
 export const defineDriver = <
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  S extends Record<string, Record<string, Schema.Schema<any, any, never>>>,
+  S extends Record<string, Record<string, Schema.Schema<any>>>,
   State = unknown,
   E = never,
   R = never

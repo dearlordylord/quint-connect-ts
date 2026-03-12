@@ -1,4 +1,4 @@
-import { NodeContext } from "@effect/platform-node"
+import { NodeServices } from "@effect/platform-node"
 import { it } from "@effect/vitest"
 import { Effect } from "effect"
 import { test } from "vitest"
@@ -28,7 +28,7 @@ export const quintIt = <S, Actions extends PartialActionMap<E, never>, E>(
 ): void => {
   it.effect(name, () =>
     quintRun(opts).pipe(
-      Effect.provide(NodeContext.layer),
+      Effect.provide(NodeServices.layer),
       Effect.scoped
     ), { timeout: timeout ?? DEFAULT_TIMEOUT })
 }

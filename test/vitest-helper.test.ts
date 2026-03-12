@@ -3,12 +3,13 @@ import * as path from "node:path"
 import { describe } from "vitest"
 import { z } from "zod"
 
-import { ITFBigInt as EffectITFBigInt } from "@firfi/itf-trace-parser/effect"
 import { ITFBigInt as ZodITFBigInt } from "@firfi/itf-trace-parser/zod"
+import { ITFBigInt as EffectITFBigInt } from "../src/itf/effect4-schemas.js"
 
-import { defineDriver as defineEffectDriver, stateCheck as effectStateCheck } from "../src/effect.js"
+import { defineDriver as defineEffectDriver } from "../src/effect.js"
 import { defineDriver, stateCheck } from "../src/simple.js"
 import { quintIt, quintTest } from "../src/vitest.js"
+import { stateCheckCompat as effectStateCheck } from "./effect4-compat.js"
 
 const CounterState = z.object({ count: z.bigint() })
 const CounterStateSchema = Schema.Struct({ count: EffectITFBigInt })
@@ -60,7 +61,7 @@ describe("Vitest helpers", () => {
         }
       ),
       stateCheck: effectStateCheck(
-        (raw) => Schema.decodeUnknown(CounterStateSchema)(raw).pipe(Effect.orDie),
+        (raw) => Schema.decodeUnknownEffect(CounterStateSchema)(raw).pipe(Effect.orDie),
         (spec, impl) => spec.count === impl.count
       )
     })
