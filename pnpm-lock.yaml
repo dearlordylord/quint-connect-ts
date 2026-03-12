@@ -12,8 +12,8 @@ importers:
         specifier: ^4.0.0-beta.31
         version: 4.0.0-beta.31(effect@4.0.0-beta.31)(ioredis@5.10.0)
       '@firfi/itf-trace-parser':
-        specifier: 0.1.2
-        version: 0.1.2(effect@4.0.0-beta.31)(zod@4.3.6)
+        specifier: 0.2.0-effect4.0
+        version: 0.2.0-effect4.0(effect@4.0.0-beta.31)(zod@4.3.6)
       '@standard-schema/spec':
         specifier: ^1.1.0
         version: 1.1.0
@@ -422,10 +422,10 @@ packages:
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
-  '@firfi/itf-trace-parser@0.1.2':
-    resolution: {integrity: sha512-ruegLvKQHX71tl0fscIYDknNIWPpbfpdOTAAcjMxMwW60soyzZ3QaV9QasMd/zZN8VbIZRbnNAGPnmfmBjMGzw==}
+  '@firfi/itf-trace-parser@0.2.0-effect4.0':
+    resolution: {integrity: sha512-n9duF6ET/1IEtj/BE2O6XXQSFisJ0wui/xPf8sn2jptebRfprSa5JTewYX+uauWalT3yiVOiier3H7EuiKb7LA==}
     peerDependencies:
-      effect: ^3.0.0
+      effect: ^4.0.0-beta.0
       zod: ^4.0.0
     peerDependenciesMeta:
       effect:
@@ -3299,7 +3299,7 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
-  '@firfi/itf-trace-parser@0.1.2(effect@4.0.0-beta.31)(zod@4.3.6)':
+  '@firfi/itf-trace-parser@0.2.0-effect4.0(effect@4.0.0-beta.31)(zod@4.3.6)':
     dependencies:
       '@standard-schema/spec': 1.1.0
     optionalDependencies:

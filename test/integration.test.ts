@@ -6,11 +6,11 @@ import { expect } from "vitest"
 
 import { ITFBigInt as ITFBigIntZod } from "@firfi/itf-trace-parser/zod"
 import { z } from "zod"
-import { ITFBigInt } from "../src/itf/effect4-schemas.js"
+import { ITFBigInt } from "../src/itf/schema.js"
 
 import { QuintError } from "../src/cli/quint.js"
 import type { Config, Driver, PartialActionMap } from "../src/driver/types.js"
-import { defineDriver } from "../src/effect.js"
+import { defineDriver, stateCheck } from "../src/effect.js"
 import { quintRun, TraceReplayError } from "../src/runner/runner.js"
 import {
   defineDriver as defineDriverSimple,
@@ -20,7 +20,6 @@ import {
   StateMismatchError as SimpleStateMismatchError,
   TraceReplayError as SimpleTraceReplayError
 } from "../src/simple.js"
-import { stateCheckCompat as stateCheck } from "./effect4-compat.js"
 
 const CounterStateSchema = Schema.Struct({
   count: ITFBigInt

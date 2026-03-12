@@ -1,6 +1,6 @@
 import { Schema, SchemaGetter } from "effect"
 
-import { ITFVariant, UntypedTraceSchema } from "./effect4-schemas.js"
+import { ITFVariant, UntypedTraceSchema } from "@firfi/itf-trace-parser/effect"
 
 export {
   ITFBigInt,
@@ -11,7 +11,7 @@ export {
   ITFUnserializable,
   ITFVariant,
   UntypedTraceSchema
-} from "./effect4-schemas.js"
+} from "@firfi/itf-trace-parser/effect"
 
 export type { ITFValueRaw } from "@firfi/itf-trace-parser"
 

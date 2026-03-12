@@ -2,14 +2,13 @@ import { describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import { expect } from "vitest"
 
-import { ITFBigInt } from "../src/itf/effect4-schemas.js"
+import { ITFBigInt } from "../src/itf/schema.js"
 
 import { defaultConfig } from "../src/driver/types.js"
 import type { Driver, PartialActionMap } from "../src/driver/types.js"
-import { defineDriver } from "../src/effect.js"
+import { defineDriver, stateCheck } from "../src/effect.js"
 import type { ItfTrace } from "../src/itf/schema.js"
 import { jsonReplacer, replayTrace, StateMismatchError, stripMetadata, TraceReplayError } from "../src/runner/runner.js"
-import { stateCheckCompat as stateCheck } from "./effect4-compat.js"
 
 // ---------------------------------------------------------------------------
 // T1a: stripMetadata
