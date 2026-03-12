@@ -4,5 +4,7 @@
   "initialVersions": {
     "@firfi/quint-connect": "0.4.2"
   },
-  "changesets": []
+  "changesets": [
+    "effect4-migration"
+  ]
 }
