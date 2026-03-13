@@ -6,6 +6,10 @@ Rules are reflexive: when adding a rule, apply it immediately.
 
 Use `pnpm`, not npm. Prefer package.json scripts over raw commands (e.g., `pnpm typecheck` not `pnpm tsc --noEmit`).
 
+## Branches
+
+All features must be implemented on both `master` (Effect 3) and `effect-4` (Effect 4) branches. Use a worktree for the non-current branch. Run `pnpm run ci` on both.
+
 ## Verification
 
 Run before considering work complete:
