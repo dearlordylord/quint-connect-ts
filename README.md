@@ -184,15 +184,15 @@ Both accept an optional third argument for timeout (default: 30s).
 
 ### Simple API (`@firfi/quint-connect`)
 
-- **`defineDriver(schema, factory)`** — define a typed driver with per-field Standard Schema picks. `schema` maps action names to `{ fieldName: StandardSchema }`. `factory` returns handlers (with inferred pick types) + optional `getState`/`config`/`onInit`. Compile error if a handler is missing. Actions with no `nondet` picks use an empty schema: `{ Toggle: {} }`.
-- **`defineDriver(factory)`** — define a raw driver. `factory` returns `{ step, getState?, config?, onInit? }`. See [Raw mode](#raw-mode).
+- **`defineDriver(schema, factory)`** — define a typed driver with per-field Standard Schema picks. `schema` maps action names to `{ fieldName: StandardSchema }`. `factory` returns handlers (with inferred pick types) + optional `getState`/`config`. Compile error if a handler is missing. Actions with no `nondet` picks use an empty schema: `{ Toggle: {} }`.
+- **`defineDriver(factory)`** — define a raw driver. `factory` returns `{ step, getState?, config? }`. See [Raw mode](#raw-mode).
 - **`pickFrom(nondetPicks, key, schema)`** — extract a single pick from raw nondet picks: unwrap Quint Option, transform ITF value, validate with Standard Schema. Returns `T | undefined`.
 - **`stateCheck(deserialize, compare)`** — helper that infers the state type from `deserialize` and contextually types `compare`'s parameters. Needed because TypeScript cannot infer generic type parameters across sibling callbacks in an object literal.
 - **`run(opts)`** — generate traces and replay them through a driver. Returns `Promise<{ tracesReplayed, seed }>`.
 
 ### Effect API (`@firfi/quint-connect/effect`)
 
-- **`defineDriver(schema, factory)`** — define a driver with per-field Effect Schema picks. Same shape as simple API but handlers return `Effect`. Factory may also return `onInit`.
+- **`defineDriver(schema, factory)`** — define a driver with per-field Effect Schema picks. Same shape as simple API but handlers return `Effect`.
 - **`stateCheck(deserialize, compare)`** — same as simple API but `deserialize` returns `Effect<S>`.
 - **`quintRun(opts)`** — generate traces via `quint run --mbt` and replay them through a driver. Returns `Effect<{ tracesReplayed, seed }>`.
 - **`generateTraces(opts)`** — just spawn quint and parse ITF traces without replaying.
@@ -252,31 +252,13 @@ Set `statePath: ["routingState"]` so that `deserializeState` receives `{ count: 
 
 When using `statePath`, both `deserializeState` and `getState` should work with the scoped state shape (e.g. `{ count }`, not `{ routingState: { count } }`).
 
-### `onInit` hook
+### Init action handling
 
-Drivers can optionally return an `onInit` callback from the factory. It is called with the step 0 (init) state before any actions are replayed, allowing the driver to bootstrap itself with the initial state.
+Step 0 (the init state) is processed like any other action, matching the Rust [quint-connect](https://github.com/informalsystems/quint-connect) behavior. The `mbt::actionTaken` field determines the action name.
 
-This is useful when the spec's `init` action sets non-deterministic state variables (e.g. `nondet kind = Set(A, B, C).oneOf()`). Without `onInit`, the driver has no way to learn the initial state chosen by the spec.
+With the **Rust backend** (`backend: "rust"`), init has a proper action name (e.g. `"Init"`) — define it in your action map or handle it in `step()`. State comparison runs at step 0 too.
 
-The hook receives cleaned state (metadata stripped, `statePath` applied) — the same shape that `stateCheck.deserializeState` receives.
-
-```ts
-const driver = defineDriver(
-  { Step: { amount: ITFBigInt } },
-  () => {
-    let state: MyState | undefined
-    return {
-      onInit: (rawState) => {
-        state = deserialize(rawState)  // bootstrap from spec's init state
-      },
-      Step: ({ amount }) => {
-        state!.count += amount
-      },
-      getState: () => state!,
-    }
-  }
-)
-```
+With the **TypeScript backend** (default), `mbt::actionTaken` is empty at step 0 (a known Quint TS backend limitation), so step 0 is silently skipped.
 
 ### Additional Exports
 

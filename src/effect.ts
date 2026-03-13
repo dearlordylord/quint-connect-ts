@@ -61,7 +61,6 @@ export const defineDriver = <
     & {
       getState?: () => Effect.Effect<State, E, R>
       config?: () => Config
-      onInit?: (rawState: unknown) => Effect.Effect<void, E, R>
     }
 ): DriverFactory<State, E, R> => ({
   create: () =>
@@ -77,8 +76,7 @@ export const defineDriver = <
       return {
         actions,
         ...(result.getState ? { getState: result.getState } : {}),
-        ...(result.config ? { config: result.config } : {}),
-        ...(result.onInit ? { onInit: result.onInit } : {})
+        ...(result.config ? { config: result.config } : {})
       }
     })
 })

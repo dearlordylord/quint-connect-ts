@@ -53,7 +53,6 @@ interface DriverHooks<S, E, R> {
   readonly getState?: () => Effect.Effect<S, E, R>
   readonly config?: () => Config
   readonly step?: (action: string, nondetPicks: ReadonlyMap<string, unknown>) => Effect.Effect<void, E, R>
-  readonly onInit?: (rawState: unknown) => Effect.Effect<void, E, R>
 }
 
 export type Driver<S, E = never, R = never, Actions = ActionMap<E, R>> =

@@ -170,9 +170,12 @@ describe("Integration: raw mode", () => {
     })
 
     expect(result.tracesReplayed).toBeGreaterThan(0)
-    expect(steps.length).toBeGreaterThan(0)
-    expect(steps[0].action).toBe("Increment")
-    expect(typeof steps[0].amount).toBe("bigint")
+    expect(steps.length).toBeGreaterThan(1)
+    // Step 0: TS backend reports "init" placeholder (Rust backend would report actual init action name)
+    expect(steps[0].action).toBe("init")
+    // Step 1+: actual action names
+    expect(steps[1].action).toBe("Increment")
+    expect(typeof steps[1].amount).toBe("bigint")
   })
 
   it.effect("effect-level raw mode with manual Driver step", () =>
@@ -198,10 +201,13 @@ describe("Integration: raw mode", () => {
         }
       })
 
-      expect(steps.length).toBeGreaterThan(0)
-      expect(steps[0].action).toBe("Increment")
-      expect(steps[0].picks).toBeInstanceOf(Map)
-      expect(steps[0].picks.has("amount")).toBe(true)
+      expect(steps.length).toBeGreaterThan(1)
+      // Step 0: TS backend reports "init" placeholder
+      expect(steps[0].action).toBe("init")
+      // Step 1+: actual action names
+      expect(steps[1].action).toBe("Increment")
+      expect(steps[1].picks).toBeInstanceOf(Map)
+      expect(steps[1].picks.has("amount")).toBe(true)
     }).pipe(
       Effect.provide(NodeContext.layer),
       Effect.scoped
@@ -311,8 +317,11 @@ describe("Integration: multi-module spec with qualified state keys", () => {
       // Instance state keys are fully qualified: "mainModule::alias::variable"
       expect(keys).toContain("multimod::ctr::count")
       // Actions are NOT qualified
-      expect(actions.length).toBeGreaterThan(0)
-      expect(actions[0]).toBe("Increment")
+      expect(actions.length).toBeGreaterThan(1)
+      // Step 0: TS backend reports "init" placeholder
+      expect(actions[0]).toBe("init")
+      // Step 1+: actual action names
+      expect(actions[1]).toBe("Increment")
     }).pipe(
       Effect.provide(NodeContext.layer),
       Effect.scoped
