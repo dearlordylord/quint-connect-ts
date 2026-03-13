@@ -1,5 +1,11 @@
 # @firfi/quint-connect
 
+## 1.0.0-effect4.2
+
+### Minor Changes
+
+- Remove onInit hook, dispatch step 0 as regular action (Rust quint-connect parity). BREAKING: `onInit` removed from Driver, defineDriver, and SimpleDriver.
+
 ## 1.0.0-effect4.1
 
 ### Patch Changes
