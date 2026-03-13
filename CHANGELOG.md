@@ -1,5 +1,11 @@
 # @firfi/quint-connect
 
+## 0.6.2
+
+### Patch Changes
+
+- 58163a4: skills
+
 ## 0.6.1
 
 ### Patch Changes
