@@ -1,5 +1,11 @@
 # @firfi/quint-connect
 
+## 0.5.0
+
+### Minor Changes
+
+- 6a8841e: add init method
+
 ## 0.4.2
 
 ### Patch Changes
