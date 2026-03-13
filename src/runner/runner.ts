@@ -131,12 +131,6 @@ export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
     const nondetPath = config.nondetPath ?? []
 
     for (const [stepIndex, rawState] of trace.states.entries()) {
-      if (stepIndex === 0) {
-        if (driver.onInit !== undefined) {
-          yield* driver.onInit(resolveRawState(rawState, statePath))
-        }
-        continue
-      }
       const { action, nondetPicks } = nondetPath.length > 0
         ? yield* extractFromNondetPath(rawState, nondetPath, traceIndex, stepIndex)
         : yield* Effect.map(extractMbtMeta(rawState, traceIndex, stepIndex), (meta) => ({
@@ -144,7 +138,9 @@ export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
           nondetPicks: new Map(Object.entries(meta["mbt::nondetPicks"]))
         }))
 
+      // Empty action at step 0 means TS backend didn't set mbt::actionTaken for init.
       if (action === "") {
+        if (stepIndex === 0) continue
         return yield* new TraceReplayError({
           message: `Anonymous action at trace ${traceIndex}, step ${stepIndex}`,
           traceIndex,
@@ -179,6 +175,9 @@ export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
       } else {
         const actionDef = driver.actions[action]
         if (actionDef === undefined) {
+          // At step 0, missing handler is expected (TS backend reports "init" as a placeholder).
+          // Skip instead of erroring — Rust backend users who define the init handler get dispatch above.
+          if (stepIndex === 0) continue
           return yield* new TraceReplayError({
             message: action === "init"
               ? `Unknown action: init. This is likely the known Quint typescript backend bug where non-disjunctive step actions report "init" instead of the actual action name. Wrap your step action body in \`any { YourAction, }\` as a workaround, or use \`--backend rust\`.`
