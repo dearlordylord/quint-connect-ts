@@ -1,5 +1,11 @@
 # @firfi/quint-connect
 
+## 1.0.0-effect4.3
+
+### Patch Changes
+
+- Fix broken dist: compiled JS/d.ts files referenced `@effect/platform/*` (Effect v3 paths) instead of `effect/*` (Effect v4). Caused runtime `Cannot find module` errors and type degradation for consumers.
+
 ## 1.0.0-effect4.2
 
 ### Minor Changes
