@@ -1,5 +1,11 @@
 # @firfi/quint-connect
 
+## 1.0.0-effect4.1
+
+### Patch Changes
+
+- 5953c01: add init method
+
 ## 1.0.0-effect4.0
 
 ### Major Changes

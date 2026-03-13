@@ -5,6 +5,7 @@
     "@firfi/quint-connect": "0.4.2"
   },
   "changesets": [
+    "brave-jars-guess",
     "effect4-migration"
   ]
 }
