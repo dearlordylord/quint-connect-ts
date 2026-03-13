@@ -1,5 +1,11 @@
 # @firfi/quint-connect
 
+## 0.6.3
+
+### Patch Changes
+
+- a63d0c1: llm skills
+
 ## 0.6.2
 
 ### Patch Changes
