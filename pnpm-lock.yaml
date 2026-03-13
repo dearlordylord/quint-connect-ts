@@ -39,6 +39,9 @@ importers:
       '@eslint/compat':
         specifier: ^2.0.2
         version: 2.0.2(eslint@9.39.3)
+      '@tanstack/intent':
+        specifier: ^0.0.14
+        version: 0.0.14
       '@types/node':
         specifier: ^25.1.0
         version: 25.3.5
@@ -814,6 +817,10 @@ packages:
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
+
+  '@tanstack/intent@0.0.14':
+    resolution: {integrity: sha512-83cjen+tYll6z0MIN0JC9GuMljUkfYfHFDOLhmROz4XMmbD/0ZjvKNOsFgpO7eq957XHB/qyK+hCO+3OS/D6HQ==}
+    hasBin: true
 
   '@ts-graphviz/adapter@2.0.6':
     resolution: {integrity: sha512-kJ10lIMSWMJkLkkCG5gt927SnGZcBuG0s0HHswGzcHTgvtUe7yk5/3zTEr0bafzsodsOq5Gi6FhQeV775nC35Q==}
@@ -3708,6 +3715,10 @@ snapshots:
   '@rtsao/scc@1.1.0': {}
 
   '@standard-schema/spec@1.1.0': {}
+
+  '@tanstack/intent@0.0.14':
+    dependencies:
+      yaml: 2.8.2
 
   '@ts-graphviz/adapter@2.0.6':
     dependencies:

@@ -1,0 +1,66 @@
+# skills/_artifacts/skill_tree.yaml
+library:
+  name: '@firfi/quint-connect-ts'
+  version: '0.6.0'
+  repository: 'https://github.com/dearlordylord/quint-connect-ts-ts'
+  description: 'Model-based testing framework connecting Quint formal specifications to TypeScript implementations via ITF trace replay'
+generated_from:
+  domain_map: 'skills/_artifacts/domain_map.yaml'
+  skill_spec: 'skills/_artifacts/skill_spec.md'
+generated_at: '2026-03-13'
+
+skills:
+  - name: 'Setup MBT test'
+    slug: 'quint-connect-ts-setup'
+    type: 'core'
+    domain: 'setup'
+    path: 'skills/quint-connect-ts-setup/SKILL.md'
+    description: >
+      Scaffold a quint-connect-ts model-based test from a Quint spec. Covers
+      defineDriver (typed and raw), run/quintRun, stateCheck, RunOptions,
+      simple API (Standard Schema) vs Effect API (Effect Schema), vitest
+      helpers (quintTest, quintIt), Config (statePath, nondetPath).
+    sources:
+      - 'dearlordylord/quint-connect-ts-ts:README.md'
+      - 'dearlordylord/quint-connect-ts-ts:src/simple.ts'
+      - 'dearlordylord/quint-connect-ts-ts:src/effect.ts'
+      - 'dearlordylord/quint-connect-ts-ts:src/runner/runner.ts'
+      - 'dearlordylord/quint-connect-ts-ts:src/vitest.ts'
+      - 'dearlordylord/quint-connect-ts-ts:src/vitest-simple.ts'
+      - 'dearlordylord/quint-connect-ts-ts:examples/counter/counter.test.ts'
+      - 'dearlordylord/quint-connect-ts-ts:examples/counter/counter-effect.test.ts'
+
+  - name: 'ITF type decoding'
+    slug: 'quint-connect-ts-itf-decoding'
+    type: 'core'
+    domain: 'itf-decoding'
+    path: 'skills/quint-connect-ts-itf-decoding/SKILL.md'
+    description: >
+      Decode Quint ITF JSON encoding to native JS types. ITFBigInt for
+      {"#bigint":"N"}, ITFSet for {"#set":[...]}, ITFMap for
+      {"#map":[[k,v],...]}, ITFVariant, ItfOption, ITFTuple.
+      Fully-qualified state variable names. Zod and Effect Schema variants.
+      transformITFValue. Structural comparison for Maps and Sets.
+    sources:
+      - 'dearlordylord/quint-connect-ts-ts:README.md'
+      - 'dearlordylord/quint-connect-ts-ts:src/itf/schema.ts'
+      - 'dearlordylord/quint-connect-ts-ts:src/zod.ts'
+      - 'dearlordylord/quint-connect-ts-ts:test/itf-schema.test.ts'
+      - 'dearlordylord/quint-connect-ts-ts:test/itf-picks.test.ts'
+
+  - name: 'Debug failing trace'
+    slug: 'quint-connect-ts-debug'
+    type: 'core'
+    domain: 'debugging'
+    path: 'skills/quint-connect-ts-debug/SKILL.md'
+    description: >
+      Diagnose quint-connect-ts test failures. StateMismatchError (state
+      diverged at step N with traceIndex, stepIndex, expected, actual),
+      TraceReplayError (handler threw), NoTracesError (wrong module or
+      unsatisfiable spec), QuintError, QuintNotFoundError. Reproduce
+      with seed. Inspect raw ITF via traceDir.
+    sources:
+      - 'dearlordylord/quint-connect-ts-ts:README.md'
+      - 'dearlordylord/quint-connect-ts-ts:src/runner/runner.ts'
+      - 'dearlordylord/quint-connect-ts-ts:src/cli/quint.ts'
+      - 'dearlordylord/quint-connect-ts-ts:BUG_REPORT.md'
