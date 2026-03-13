@@ -102,6 +102,14 @@ const buildPicksDecoder = (picksShape: AnyActionDef["picks"]) => {
   return Schema.decodeUnknown(Schema.Struct(wrappedFields))
 }
 
+const resolveRawState = (
+  rawState: { readonly [key: string]: unknown },
+  statePath: ReadonlyArray<string>
+): unknown =>
+  statePath.length > 0
+    ? resolveNestedValue(rawState, statePath)
+    : stripMetadata(rawState)
+
 /** @internal */
 export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
   trace: ItfTrace,
@@ -120,10 +128,16 @@ export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
       )
       : undefined
 
-    for (const [stepIndex, rawState] of trace.states.entries()) {
-      if (stepIndex === 0) continue // skip init state
+    const statePath = config.statePath ?? []
+    const nondetPath = config.nondetPath ?? []
 
-      const nondetPath = config.nondetPath ?? []
+    for (const [stepIndex, rawState] of trace.states.entries()) {
+      if (stepIndex === 0) {
+        if (driver.onInit !== undefined) {
+          yield* driver.onInit(resolveRawState(rawState, statePath))
+        }
+        continue
+      }
       const { action, nondetPicks } = nondetPath.length > 0
         ? yield* extractFromNondetPath(rawState, nondetPath, traceIndex, stepIndex)
         : yield* Effect.map(extractMbtMeta(rawState, traceIndex, stepIndex), (meta) => ({
@@ -223,11 +237,7 @@ export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
             action
           })
         }
-        const statePath = config.statePath ?? []
-        const specStateRaw = statePath.length > 0
-          ? resolveNestedValue(rawState, statePath)
-          : stripMetadata(rawState)
-        const specState = yield* stateCheck.deserializeState(specStateRaw)
+        const specState = yield* stateCheck.deserializeState(resolveRawState(rawState, statePath))
         const implState = yield* driver.getState()
 
         if (!stateCheck.compareState(specState, implState)) {

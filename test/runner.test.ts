@@ -500,3 +500,169 @@ describe("jsonReplacer", () => {
     expect(result).toBe("{\"count\":\"5n\",\"name\":\"test\"}")
   })
 })
+
+// ---------------------------------------------------------------------------
+// onInit hook
+// ---------------------------------------------------------------------------
+
+describe("replayTrace onInit hook", () => {
+  it.effect("calls onInit with stripped state at step 0", () =>
+    Effect.gen(function*() {
+      const receivedInit: Array<unknown> = []
+
+      const trace: ItfTrace = {
+        vars: ["count", "mbt::actionTaken", "mbt::nondetPicks"],
+        states: [
+          {
+            "#meta": { index: 0 },
+            "mbt::actionTaken": "",
+            "mbt::nondetPicks": {},
+            count: { "#bigint": "0" }
+          },
+          {
+            "#meta": { index: 1 },
+            "mbt::actionTaken": "Increment",
+            "mbt::nondetPicks": {
+              amount: { tag: "Some", value: { "#bigint": "5" } }
+            },
+            count: { "#bigint": "5" }
+          }
+        ]
+      }
+
+      const factory = defineDriver(
+        { Increment: { amount: ITFBigInt } },
+        () => ({
+          Increment: () => Effect.void,
+          getState: () => Effect.succeed({ count: 5n }),
+          onInit: (rawState: unknown) =>
+            Effect.sync(() => {
+              receivedInit.push(rawState)
+            })
+        })
+      )
+      const driver = yield* factory.create()
+
+      yield* replayTrace(
+        trace,
+        0,
+        driver,
+        defaultConfig,
+        stateCheck(
+          (raw) => Schema.decodeUnknown(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie),
+          (spec, impl) => spec.count === impl.count
+        ),
+        "test-seed"
+      )
+
+      expect(receivedInit.length).toBe(1)
+      const received = receivedInit[0] as Record<string, unknown>
+      expect(Object.keys(received)).toContain("count")
+      expect(Object.keys(received)).not.toContain("#meta")
+      expect(Object.keys(received)).not.toContain("mbt::actionTaken")
+      expect(Object.keys(received)).not.toContain("mbt::nondetPicks")
+    }))
+
+  it.effect("onInit receives statePath-resolved state", () =>
+    Effect.gen(function*() {
+      const receivedInit: Array<unknown> = []
+
+      const trace: ItfTrace = {
+        vars: ["nested::state", "mbt::actionTaken", "mbt::nondetPicks"],
+        states: [
+          {
+            "#meta": { index: 0 },
+            "mbt::actionTaken": "",
+            "mbt::nondetPicks": {},
+            "nested::state": { count: { "#bigint": "0" }, label: "init" }
+          },
+          {
+            "#meta": { index: 1 },
+            "mbt::actionTaken": "Step",
+            "mbt::nondetPicks": {},
+            "nested::state": { count: { "#bigint": "1" }, label: "stepped" }
+          }
+        ]
+      }
+
+      const factory = defineDriver(
+        { Step: {} },
+        () => ({
+          Step: () => Effect.void,
+          getState: () => Effect.succeed({ count: 1n, label: "stepped" }),
+          config: () => ({ statePath: ["nested::state"] }),
+          onInit: (rawState: unknown) =>
+            Effect.sync(() => {
+              receivedInit.push(rawState)
+            })
+        })
+      )
+      const driver = yield* factory.create()
+      const config = { ...defaultConfig, ...driver.config?.() }
+
+      yield* replayTrace(
+        trace,
+        0,
+        driver,
+        config,
+        stateCheck(
+          (raw) =>
+            Schema.decodeUnknown(
+              Schema.Struct({ count: ITFBigInt, label: Schema.String })
+            )(raw).pipe(Effect.orDie),
+          (spec, impl) => spec.count === impl.count && spec.label === impl.label
+        ),
+        "test-seed"
+      )
+
+      expect(receivedInit.length).toBe(1)
+      const received = receivedInit[0] as Record<string, unknown>
+      expect(Object.keys(received)).toContain("count")
+      expect(Object.keys(received)).toContain("label")
+      expect(Object.keys(received).some(k => k.includes("::"))).toBe(false)
+    }))
+
+  it.effect("skips onInit when not provided", () =>
+    Effect.gen(function*() {
+      const trace: ItfTrace = {
+        vars: ["count", "mbt::actionTaken", "mbt::nondetPicks"],
+        states: [
+          {
+            "#meta": { index: 0 },
+            "mbt::actionTaken": "",
+            "mbt::nondetPicks": {},
+            count: { "#bigint": "0" }
+          },
+          {
+            "#meta": { index: 1 },
+            "mbt::actionTaken": "Increment",
+            "mbt::nondetPicks": {
+              amount: { tag: "Some", value: { "#bigint": "5" } }
+            },
+            count: { "#bigint": "5" }
+          }
+        ]
+      }
+
+      const factory = defineDriver(
+        { Increment: { amount: ITFBigInt } },
+        () => ({
+          Increment: () => Effect.void,
+          getState: () => Effect.succeed({ count: 5n })
+        })
+      )
+      const driver = yield* factory.create()
+
+      yield* replayTrace(
+        trace,
+        0,
+        driver,
+        defaultConfig,
+        stateCheck(
+          (raw) => Schema.decodeUnknown(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie),
+          (spec, impl) => spec.count === impl.count
+        ),
+        "test-seed"
+      )
+    }))
+})

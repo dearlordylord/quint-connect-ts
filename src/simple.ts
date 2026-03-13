@@ -47,6 +47,7 @@ interface SimpleDriverHooks<S> {
   readonly getState?: () => S
   readonly config?: () => Config
   readonly step?: (action: string, nondetPicks: ReadonlyMap<string, unknown>) => void | Promise<void>
+  readonly onInit?: (rawState: unknown) => void | Promise<void>
 }
 
 export type SimpleDriver<S, Actions extends SimpleActionMap = SimpleActionMap> =
@@ -89,6 +90,7 @@ export function defineDriver<
     & {
       getState?: () => State
       config?: () => Config
+      onInit?: (rawState: unknown) => void | Promise<void>
     }
 ): () => SimpleDriver<State>
 // Overload 2: raw mode — defineDriver(factory)
@@ -97,6 +99,7 @@ export function defineDriver<State = unknown>(
     step: (action: string, nondetPicks: ReadonlyMap<string, unknown>) => void | Promise<void>
     getState?: () => State
     config?: () => Config
+    onInit?: (rawState: unknown) => void | Promise<void>
   }
 ): () => SimpleDriver<State>
 // Implementation
@@ -116,7 +119,8 @@ export function defineDriver(
         actions: {},
         step: result.step,
         ...(result.getState ? { getState: result.getState } : {}),
-        ...(result.config ? { config: result.config } : {})
+        ...(result.config ? { config: result.config } : {}),
+        ...(result.onInit ? { onInit: result.onInit } : {})
       }
     }
   }
@@ -132,7 +136,8 @@ export function defineDriver(
     return {
       actions,
       ...(result.getState ? { getState: result.getState } : {}),
-      ...(result.config ? { config: result.config } : {})
+      ...(result.config ? { config: result.config } : {}),
+      ...(result.onInit ? { onInit: result.onInit } : {})
     }
   }
 }
@@ -177,6 +182,7 @@ const wrapDriver = <S, Actions extends SimpleActionMap>(
 
   const simpleGetState = simple.getState
   const simpleStep = simple.step
+  const simpleOnInit = simple.onInit
   return {
     actions,
     ...(simpleGetState !== undefined ? { getState: () => Effect.sync(simpleGetState) } : {}),
@@ -186,6 +192,14 @@ const wrapDriver = <S, Actions extends SimpleActionMap>(
         step: (action: string, picks: ReadonlyMap<string, unknown>) =>
           Effect.promise(async () => {
             await Promise.resolve(simpleStep(action, picks))
+          })
+      }
+      : {}),
+    ...(simpleOnInit !== undefined
+      ? {
+        onInit: (rawState: unknown) =>
+          Effect.promise(async () => {
+            await Promise.resolve(simpleOnInit(rawState))
           })
       }
       : {})
