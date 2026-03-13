@@ -1,6 +1,6 @@
 {
   "name": "@firfi/quint-connect",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Model-based testing framework connecting Quint specifications to TypeScript implementations",
   "type": "module",
   "main": "./dist/index.js",
@@ -28,7 +28,10 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "skills",
+    "bin",
+    "!skills/_artifacts"
   ],
   "publishConfig": {
     "access": "public"
@@ -66,17 +69,18 @@
     "itf",
     "effect",
     "property-based-testing",
-    "state-machine"
+    "state-machine",
+    "tanstack-intent"
   ],
   "packageManager": "pnpm@10.29.3",
   "author": "dearlordylord",
   "license": "Apache-2.0",
   "peerDependencies": {
-    "vitest": ">=1.0.0",
-    "effect": "^3.0.0",
     "@effect/platform-node": ">=0.100.0",
-    "zod": ">=4.0.0",
-    "@effect/vitest": ">=0.20.0"
+    "@effect/vitest": ">=0.20.0",
+    "effect": "^3.0.0",
+    "vitest": ">=1.0.0",
+    "zod": ">=4.0.0"
   },
   "peerDependenciesMeta": {
     "vitest": {
@@ -117,6 +121,7 @@
     "@effect/language-service": "^0.73.1",
     "@effect/vitest": "latest",
     "@eslint/compat": "^2.0.2",
+    "@tanstack/intent": "^0.0.14",
     "@types/node": "^25.1.0",
     "@typescript-eslint/parser": "^8.54.0",
     "eslint": "^9.39.2",
@@ -134,5 +139,8 @@
     "typescript-eslint": "^8.54.0",
     "vitest": "latest",
     "zod": "^4.3.6"
+  },
+  "bin": {
+    "intent": "./bin/intent.js"
   }
 }

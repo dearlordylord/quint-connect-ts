@@ -1,5 +1,11 @@
 # @firfi/quint-connect
 
+## 0.6.1
+
+### Patch Changes
+
+- 2d86603: llm skills
+
 ## 0.6.0
 
 ### Minor Changes
