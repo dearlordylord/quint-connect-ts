@@ -12,7 +12,7 @@ description: >
   complex state.
 type: core
 library: quint-connect-ts
-library_version: "0.6.0"
+library_version: "0.6.0 (Effect 3, @latest) / 1.0.0-effect4 (Effect 4, @effect4)"
 sources:
   - "dearlordylord/quint-connect-ts:README.md"
   - "dearlordylord/quint-connect-ts:src/itf/schema.ts"
@@ -39,6 +39,12 @@ Quint outputs state and picks in ITF (Informal Trace Format) JSON encoding. Each
 | `Option(T)` | `{tag:"Some",value:...}` / `{tag:"None",...}` | `T \| undefined` | `ItfOption(inner)` | -- |
 
 All Quint `int` values become `bigint`, never `number`. Use `0n` literals.
+
+## Effect 3 vs Effect 4
+
+This only matters if the project uses `effect` as a dependency. The Zod / Simple API is identical across both versions. Install the correct dist-tag: `@firfi/quint-connect@latest` for `effect@^3`, `@firfi/quint-connect@effect4` for `effect@^4`. See `quint-connect-ts-setup` skill for full details and API difference table.
+
+The Effect Schema examples below use Effect 3 syntax. For Effect 4, the ITF schema imports (`ITFBigInt`, `ITFSet`, `ITFMap`, `ItfOption`) are the same — only the underlying Effect/Schema API calls differ (see setup skill).
 
 ## Setup -- Effect Schema
 

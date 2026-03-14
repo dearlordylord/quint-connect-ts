@@ -76,6 +76,10 @@ Model-based testing framework connecting Quint formal specifications to TypeScri
 | quint-connect-ts-itf-decoding | -- | ITF type mapping table (7 types) |
 | quint-connect-ts-debug | -- | -- |
 
+## Effect 3 vs Effect 4
+
+Two versions are published under different npm dist-tags: `@latest` (Effect 3, `effect@^3`) and `@effect4` (Effect 4, `effect@^4`). This only matters when the project already uses `effect` as a dependency. The Simple API (Zod / Standard Schema) is identical across both. The Effect API has minor naming differences (`Schema.TaggedError` vs `Schema.TaggedErrorClass`, `Schema.decodeUnknown` vs `Schema.decodeUnknownEffect`, etc.) but the quint-connect user-facing API is the same. Full details in `quint-connect-ts-setup`.
+
 ## Remaining Gaps
 
 No gaps -- all resolved in interview.

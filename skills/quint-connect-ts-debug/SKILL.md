@@ -11,7 +11,7 @@ description: >
   understand why.
 type: core
 library: quint-connect-ts
-library_version: "0.6.0"
+library_version: "0.6.0 (Effect 3, @latest) / 1.0.0-effect4 (Effect 4, @effect4)"
 sources:
   - "dearlordylord/quint-connect-ts:README.md"
   - "dearlordylord/quint-connect-ts:src/runner/runner.ts"
@@ -20,6 +20,12 @@ sources:
 ---
 
 # quint-connect-ts -- Debug Failing Trace
+
+## Effect 3 vs Effect 4
+
+This only matters if the project uses `effect` as a dependency (Effect API path). The Simple API error handling is identical across both versions. Install the correct dist-tag: `@firfi/quint-connect@latest` for `effect@^3`, `@firfi/quint-connect@effect4` for `effect@^4`. See `quint-connect-ts-setup` skill for full details and API difference table.
+
+The error classes (`StateMismatchError`, `TraceReplayError`, etc.) work the same way in both versions. Internally they use `Schema.TaggedError` (Effect 3) or `Schema.TaggedErrorClass` (Effect 4), but the user-facing API (`Effect.catchTag`, error fields) is unchanged.
 
 ## Error Types
 

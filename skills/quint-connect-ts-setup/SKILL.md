@@ -11,7 +11,7 @@ description: >
   state checking.
 type: core
 library: quint-connect-ts
-library_version: "0.6.0"
+library_version: "0.6.0 (Effect 3, @latest) / 1.0.0-effect4 (Effect 4, @effect4)"
 sources:
   - "dearlordylord/quint-connect-ts:README.md"
   - "dearlordylord/quint-connect-ts:src/simple.ts"
@@ -30,6 +30,31 @@ sources:
 - Node.js 21+ (for `import.meta.dirname`)
 - ESM project (`"type": "module"` in package.json)
 - Quint CLI on PATH (`npx @informalsystems/quint` works without global install)
+
+## Effect 3 vs Effect 4
+
+**This section only applies if the project already uses `effect` as a dependency.** If using the Simple API (no Effect dependency), skip this — the Simple API is identical across both versions.
+
+Two npm dist-tags are published:
+
+| Project's Effect version | Install command | npm dist-tag |
+|---|---|---|
+| `effect@^3` (Effect 3) | `pnpm add -D @firfi/quint-connect@latest` | `@latest` (default) |
+| `effect@^4` (Effect 4) | `pnpm add -D @firfi/quint-connect@effect4` | `@effect4` |
+
+**You must match the installed version to the project's Effect major.** Installing the wrong one causes peer dependency conflicts and runtime errors.
+
+Key Effect API differences between the two versions (internals only — the quint-connect user-facing API is the same):
+
+| Effect 3 (`@latest`) | Effect 4 (`@effect4`) |
+|---|---|
+| `Schema.TaggedError` | `Schema.TaggedErrorClass` |
+| `Schema.decodeUnknown(S)(value)` | `Schema.decodeUnknownEffect(S)(value)` |
+| `Schema.optionalWith(S, { default: () => v })` | `Schema.optional(S).pipe(Schema.withDecodingDefault(() => v))` |
+| `@effect/platform-node` separate package | Platform merged into `effect` |
+| `Effect.provide(NodeContext.layer)` | `Effect.provide(NodeContext.layer)` (same) |
+
+For the Effect API examples in this skill, the code shown uses Effect 3 syntax. If targeting Effect 4, adjust the Schema/Effect calls per the table above.
 
 ## Setup -- Simple API (recommended default)
 
