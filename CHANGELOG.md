@@ -1,5 +1,11 @@
 # @firfi/quint-connect
 
+## 0.7.1
+
+### Patch Changes
+
+- Update README: remove @effect/platform-node from install, update vitest helper examples
+
 ## 0.7.0
 
 ### Minor Changes
