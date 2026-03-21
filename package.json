@@ -1,6 +1,6 @@
 {
   "name": "@firfi/quint-connect",
-  "version": "1.0.0-effect4.3",
+  "version": "1.0.0-effect4.4",
   "description": "Model-based testing framework connecting Quint specifications to TypeScript implementations",
   "type": "module",
   "main": "./dist/index.js",
@@ -72,8 +72,6 @@
   "author": "dearlordylord",
   "license": "Apache-2.0",
   "peerDependencies": {
-    "@effect/platform-node": "^4.0.0-beta.0",
-    "@effect/vitest": "^4.0.0-beta.0",
     "effect": "^4.0.0-beta.0",
     "vitest": ">=1.0.0",
     "zod": ">=4.0.0"
@@ -85,18 +83,11 @@
     "effect": {
       "optional": true
     },
-    "@effect/platform-node": {
-      "optional": true
-    },
     "zod": {
-      "optional": true
-    },
-    "@effect/vitest": {
       "optional": true
     }
   },
   "dependencies": {
-    "@effect/platform-node": "^4.0.0-beta.31",
     "@firfi/itf-trace-parser": "0.2.0-effect4.0",
     "@standard-schema/spec": "^1.1.0",
     "effect": "^4.0.0-beta.31"

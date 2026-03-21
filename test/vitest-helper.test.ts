@@ -1,6 +1,7 @@
+import { it as effectIt } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import * as path from "node:path"
-import { describe } from "vitest"
+import { describe, test } from "vitest"
 import { z } from "zod"
 
 import { ITFBigInt as ZodITFBigInt } from "@firfi/itf-trace-parser/zod"
@@ -17,7 +18,7 @@ const specDir = path.resolve(import.meta.dirname, "specs")
 
 describe("Vitest helpers", () => {
   describe("quintTest (simple API with Zod)", () => {
-    quintTest("replays counter traces via simple API with Zod", {
+    quintTest(test, "replays counter traces via simple API with Zod", {
       spec: path.join(specDir, "counter.qnt"),
       nTraces: 3,
       maxSamples: 3,
@@ -40,7 +41,7 @@ describe("Vitest helpers", () => {
   })
 
   describe("quintIt (Effect API with defineDriver)", () => {
-    quintIt("replays counter traces via Effect API", {
+    quintIt(effectIt.effect, "replays counter traces via Effect API", {
       spec: path.join(specDir, "counter.qnt"),
       nTraces: 3,
       maxSamples: 3,

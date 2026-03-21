@@ -1,4 +1,3 @@
-import { NodeServices } from "@effect/platform-node"
 import { describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import * as path from "node:path"
@@ -78,10 +77,7 @@ describe("Integration: counter spec", () => {
 
       expect(result.tracesReplayed).toBeGreaterThan(0)
       expect(result.seed).toBe("1")
-    }).pipe(
-      Effect.provide(NodeServices.layer),
-      Effect.scoped
-    ), { timeout: 30000 })
+    }), { timeout: 30000 })
 
   it.effect("replays traces concurrently with concurrency > 1", () =>
     Effect.gen(function*() {
@@ -101,10 +97,7 @@ describe("Integration: counter spec", () => {
 
       expect(result.tracesReplayed).toBeGreaterThan(0)
       expect(result.seed).toBe("1")
-    }).pipe(
-      Effect.provide(NodeServices.layer),
-      Effect.scoped
-    ), { timeout: 30000 })
+    }), { timeout: 30000 })
 
   it.effect("replays traces without stateCheck and without getState", () =>
     Effect.gen(function*() {
@@ -119,10 +112,7 @@ describe("Integration: counter spec", () => {
 
       expect(result.tracesReplayed).toBeGreaterThan(0)
       expect(result.seed).toBe("1")
-    }).pipe(
-      Effect.provide(NodeServices.layer),
-      Effect.scoped
-    ), { timeout: 30000 })
+    }), { timeout: 30000 })
 
   it.effect("fails with TraceReplayError on unknown action", () =>
     Effect.gen(function*() {
@@ -146,10 +136,7 @@ describe("Integration: counter spec", () => {
       if (result instanceof TraceReplayError) {
         expect(result.message).toContain("Unknown action")
       }
-    }).pipe(
-      Effect.provide(NodeServices.layer),
-      Effect.scoped
-    ), { timeout: 30000 })
+    }), { timeout: 30000 })
 })
 
 describe("Integration: raw mode", () => {
@@ -208,10 +195,7 @@ describe("Integration: raw mode", () => {
       expect(steps[1].action).toBe("Increment")
       expect(steps[1].picks).toBeInstanceOf(Map)
       expect(steps[1].picks.has("amount")).toBe(true)
-    }).pipe(
-      Effect.provide(NodeServices.layer),
-      Effect.scoped
-    ), { timeout: 30000 })
+    }), { timeout: 30000 })
 })
 
 const NestedStateSchema = Schema.Struct({
@@ -257,10 +241,7 @@ describe("Integration: nested state spec with statePath", () => {
 
       expect(result.tracesReplayed).toBeGreaterThan(0)
       expect(result.seed).toBe("1")
-    }).pipe(
-      Effect.provide(NodeServices.layer),
-      Effect.scoped
-    ), { timeout: 30000 })
+    }), { timeout: 30000 })
 })
 
 // ---------------------------------------------------------------------------
@@ -322,10 +303,7 @@ describe("Integration: multi-module spec with qualified state keys", () => {
       expect(actions[0]).toBe("init")
       // Step 1+: actual action names
       expect(actions[1]).toBe("Increment")
-    }).pipe(
-      Effect.provide(NodeServices.layer),
-      Effect.scoped
-    ), { timeout: 30000 })
+    }), { timeout: 30000 })
 
   it.effect("full replay with state check using qualified keys", () =>
     Effect.gen(function*() {
@@ -358,10 +336,7 @@ describe("Integration: multi-module spec with qualified state keys", () => {
       })
 
       expect(result.tracesReplayed).toBeGreaterThan(0)
-    }).pipe(
-      Effect.provide(NodeServices.layer),
-      Effect.scoped
-    ), { timeout: 30000 })
+    }), { timeout: 30000 })
 })
 
 // ---------------------------------------------------------------------------
@@ -422,10 +397,7 @@ describe("Integration: statePath through qualified key", () => {
       expect(keys).toContain("count")
       expect(keys).toContain("label")
       expect(keys.some(k => k.includes("::"))).toBe(false)
-    }).pipe(
-      Effect.provide(NodeServices.layer),
-      Effect.scoped
-    ), { timeout: 30000 })
+    }), { timeout: 30000 })
 })
 
 const createPartialConfigDriverFactory = () =>
@@ -462,10 +434,7 @@ describe("Integration: partial config", () => {
 
       expect(result.tracesReplayed).toBeGreaterThan(0)
       expect(result.seed).toBe("1")
-    }).pipe(
-      Effect.provide(NodeServices.layer),
-      Effect.scoped
-    ), { timeout: 30000 })
+    }), { timeout: 30000 })
 })
 
 describe("Integration: QuintError includes stderr", () => {
@@ -489,10 +458,7 @@ describe("Integration: QuintError includes stderr", () => {
         expect(result.message).toContain("quint run failed with exit code")
         expect(result.message.length).toBeGreaterThan("quint run failed with exit code 1".length)
       }
-    }).pipe(
-      Effect.provide(NodeServices.layer),
-      Effect.scoped
-    ), { timeout: 30000 })
+    }), { timeout: 30000 })
 })
 
 describe("Simple API: error unwrapping", () => {

@@ -1,7 +1,9 @@
-import { Effect, FileSystem, Path, Schema, Stream } from "effect"
-import type { Scope } from "effect"
-import { ChildProcess } from "effect/unstable/process"
-import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { Effect, Schema } from "effect"
+import { spawn } from "node:child_process"
+import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
 import { ItfTrace } from "../itf/schema.js"
 
 export class QuintError extends Schema.TaggedErrorClass<QuintError>()("QuintError", {
@@ -84,36 +86,32 @@ const buildRunArgs = (
   return args
 }
 
+const runQuintProcess = (
+  args: ReadonlyArray<string>,
+  verbose: boolean
+): Effect.Effect<{ readonly exitCode: number; readonly stderr: string }, QuintNotFoundError> =>
+  Effect.callback<{ readonly exitCode: number; readonly stderr: string }, QuintNotFoundError>((resume, signal) => {
+    const env = verbose ? { ...process.env, QUINT_VERBOSE: "true" } : process.env
+    const proc = spawn("npx", ["@informalsystems/quint", ...args], { env })
+    let stderr = ""
+    proc.stdout.resume()
+    proc.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString()
+    })
+    proc.on("close", (code) => resume(Effect.succeed({ exitCode: code ?? 1, stderr })))
+    proc.on("error", (e) => resume(Effect.fail(new QuintNotFoundError({ message: `Failed to start quint: ${e}` }))))
+    signal.addEventListener("abort", () => {
+      proc.kill()
+    })
+  })
+
 const runAndReadTraces = (
   opts: RunOptions,
   outDir: string
-): Effect.Effect<
-  ReadonlyArray<ItfTrace>,
-  QuintError | QuintNotFoundError,
-  FileSystem.FileSystem | Path.Path | ChildProcessSpawner | Scope.Scope
-> =>
+): Effect.Effect<ReadonlyArray<ItfTrace>, QuintError | QuintNotFoundError> =>
   Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
     const args = buildRunArgs(opts, outDir)
-    const cmd = ChildProcess.make(
-      "npx",
-      ["@informalsystems/quint", ...args],
-      opts.verbose === true ? { env: { QUINT_VERBOSE: "true" }, extendEnv: true } : undefined
-    )
-    const proc = yield* Effect.mapError(
-      Effect.fromYieldable(cmd),
-      (e) => new QuintNotFoundError({ message: `Failed to start quint: ${e}` })
-    )
-    const decoder = new TextDecoder()
-    const [exitCode, , stderr] = yield* Effect.mapError(
-      Effect.all([
-        proc.exitCode,
-        Stream.runDrain(proc.stdout),
-        Stream.runFold(proc.stderr, () => "", (acc, chunk) => acc + decoder.decode(chunk))
-      ], { concurrency: "unbounded" }),
-      (e) => new QuintError({ message: `quint process error: ${e}` })
-    )
+    const { exitCode, stderr } = yield* runQuintProcess(args, opts.verbose === true)
     if (exitCode !== 0) {
       return yield* new QuintError({
         message: stderr
@@ -123,19 +121,19 @@ const runAndReadTraces = (
         exitCode
       })
     }
-    const files = yield* Effect.mapError(
-      fs.readDirectory(outDir),
-      (e) => new QuintError({ message: `Failed to read trace directory: ${e}` })
-    )
+    const files = yield* Effect.tryPromise({
+      try: () => readdir(outDir),
+      catch: (e) => new QuintError({ message: `Failed to read trace directory: ${e}` })
+    })
     const traceFiles = files
       .filter((f: string) => f.endsWith(".itf.json"))
       .sort()
     const traces: Array<ItfTrace> = []
     for (const file of traceFiles) {
-      const content = yield* Effect.mapError(
-        fs.readFileString(path.join(outDir, file)),
-        (e) => new QuintError({ message: `Failed to read trace file ${file}: ${e}` })
-      )
+      const content = yield* Effect.tryPromise({
+        try: () => readFile(join(outDir, file), "utf-8"),
+        catch: (e) => new QuintError({ message: `Failed to read trace file ${file}: ${e}` })
+      })
       const json: unknown = yield* Effect.try({
         try: () => JSON.parse(content),
         catch: (e) => new QuintError({ message: `Invalid JSON in trace file ${file}: ${e}` })
@@ -152,43 +150,30 @@ const runAndReadTraces = (
 const generateTracesWithTraceDir = (
   opts: RunOptions,
   traceDir: string
-): Effect.Effect<
-  ReadonlyArray<ItfTrace>,
-  QuintError | QuintNotFoundError,
-  FileSystem.FileSystem | Path.Path | ChildProcessSpawner
-> =>
+): Effect.Effect<ReadonlyArray<ItfTrace>, QuintError | QuintNotFoundError> =>
   Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    yield* Effect.mapError(
-      fs.makeDirectory(traceDir, { recursive: true }),
-      (e) => new QuintError({ message: `Failed to create trace directory: ${e}` })
-    )
+    yield* Effect.tryPromise({
+      try: () => mkdir(traceDir, { recursive: true }),
+      catch: (e) => new QuintError({ message: `Failed to create trace directory: ${e}` })
+    })
     return yield* runAndReadTraces(opts, traceDir)
-  }).pipe(Effect.scoped)
+  })
 
 const generateTracesWithTempDir = (
   opts: RunOptions
-): Effect.Effect<
-  ReadonlyArray<ItfTrace>,
-  QuintError | QuintNotFoundError,
-  FileSystem.FileSystem | Path.Path | ChildProcessSpawner
-> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const tmpDir = yield* Effect.mapError(
-      fs.makeTempDirectoryScoped(),
-      (e) => new QuintError({ message: `Failed to create temp directory: ${e}` })
-    )
-    return yield* runAndReadTraces(opts, tmpDir)
-  }).pipe(Effect.scoped)
+): Effect.Effect<ReadonlyArray<ItfTrace>, QuintError | QuintNotFoundError> =>
+  Effect.acquireUseRelease(
+    Effect.tryPromise({
+      try: () => mkdtemp(join(tmpdir(), "quint-")),
+      catch: (e) => new QuintError({ message: `Failed to create temp directory: ${e}` })
+    }),
+    (tmpDir) => runAndReadTraces(opts, tmpDir),
+    (tmpDir) => Effect.promise(() => rm(tmpDir, { recursive: true, force: true }).catch(() => {}))
+  )
 
 export const generateTraces = (
   opts: RunOptions
-): Effect.Effect<
-  ReadonlyArray<ItfTrace>,
-  QuintError | QuintNotFoundError,
-  FileSystem.FileSystem | Path.Path | ChildProcessSpawner
-> =>
+): Effect.Effect<ReadonlyArray<ItfTrace>, QuintError | QuintNotFoundError> =>
   opts.traceDir !== undefined
     ? generateTracesWithTraceDir(opts, opts.traceDir)
     : generateTracesWithTempDir(opts)

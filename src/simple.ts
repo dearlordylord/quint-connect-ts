@@ -1,4 +1,3 @@
-import { NodeServices } from "@effect/platform-node"
 import { Cause, Effect, Exit, Option, Result, Schema } from "effect"
 
 import { transformITFValue } from "@firfi/itf-trace-parser"
@@ -209,9 +208,7 @@ export const run = <S, Actions extends SimpleActionMap>(
       : undefined
   })
 
-  return Effect.runPromiseExit(
-    program.pipe(Effect.provide(NodeServices.layer))
-  ).then((exit) => {
+  return Effect.runPromiseExit(program).then((exit) => {
     if (Exit.isSuccess(exit)) return exit.value
     const failure = Cause.findErrorOption(exit.cause)
     if (Option.isSome(failure)) throw failure.value

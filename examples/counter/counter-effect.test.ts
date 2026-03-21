@@ -4,6 +4,7 @@
  * Use this when you need Effect's typed error channels, services,
  * or resource management in your driver.
  */
+import { it as effectIt } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import * as path from "node:path"
 import { describe } from "vitest"
@@ -31,7 +32,7 @@ const counterDriver = defineDriver(
 
 // 3. Use quintIt for Effect-based tests
 describe("Counter MBT (Effect)", () => {
-  quintIt("replays Quint traces against TS implementation", {
+  quintIt(effectIt.effect, "replays Quint traces against TS implementation", {
     spec: path.join(import.meta.dirname, "specs", "counter.qnt"),
     driverFactory: counterDriver,
     stateCheck: stateCheck(

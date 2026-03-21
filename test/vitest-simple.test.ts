@@ -1,5 +1,5 @@
 import * as path from "node:path"
-import { describe } from "vitest"
+import { describe, test } from "vitest"
 import { z } from "zod"
 
 import { ITFBigInt as ZodITFBigInt } from "@firfi/itf-trace-parser/zod"
@@ -12,7 +12,7 @@ const CounterState = z.object({ count: z.bigint() })
 const specDir = path.resolve(import.meta.dirname, "specs")
 
 describe("vitest-simple entry point", () => {
-  quintTest("replays counter traces via vitest-simple quintTest", {
+  quintTest(test, "replays counter traces via vitest-simple quintTest", {
     spec: path.join(specDir, "counter.qnt"),
     nTraces: 3,
     maxSamples: 3,

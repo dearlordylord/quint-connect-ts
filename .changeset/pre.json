@@ -6,6 +6,7 @@
   },
   "changesets": [
     "brave-jars-guess",
-    "effect4-migration"
+    "effect4-migration",
+    "remove-platform-deps"
   ]
 }
