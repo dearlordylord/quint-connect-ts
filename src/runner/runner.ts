@@ -1,6 +1,3 @@
-import type * as CommandExecutor from "@effect/platform/CommandExecutor"
-import type * as FileSystem from "@effect/platform/FileSystem"
-import type * as Path from "@effect/platform/Path"
 import { Array as Arr, Effect, Predicate, Schema } from "effect"
 import type { QuintError, QuintNotFoundError, RunOptions } from "../cli/quint.js"
 import { generateTraces } from "../cli/quint.js"
@@ -179,6 +176,9 @@ export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
           // At step 0, action is "init" — skip if no handler defined (convenience so users
           // don't need an explicit init handler when their constructor already sets up state).
           if (stepIndex === 0) continue
+          // Rust backend emits "step" when the spec's step action body is a direct no-op
+          // (e.g. state' = state for a dead character). Skip since there's nothing to dispatch.
+          if (action === "step") continue
           return yield* new TraceReplayError({
             message: action === "init"
               ? `Unknown action: init. This is likely the known Quint typescript backend bug (https://github.com/informalsystems/quint/pull/1929) where non-disjunctive step actions report "init" instead of the actual action name. Wrap your step action body in \`any { YourAction, }\` as a workaround, or use \`--backend rust\`.`
@@ -286,7 +286,7 @@ export const quintRun = <
 ): Effect.Effect<
   { readonly tracesReplayed: number; readonly seed: string },
   E | QuintError | QuintNotFoundError | StateMismatchError | TraceReplayError | NoTracesError,
-  R | FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+  R
 > =>
   Effect.gen(function*() {
     const seed = resolveSeed(opts)

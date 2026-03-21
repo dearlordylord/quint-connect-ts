@@ -1,5 +1,25 @@
 # @firfi/quint-connect
 
+## 0.7.0
+
+### Minor Changes
+
+- Remove @effect/platform and @effect/platform-node dependencies, eliminating 23 transitive packages (cluster, rpc, sql, experimental, etc.)
+
+  BREAKING CHANGES:
+
+  - `quintTest` and `quintIt` now take the test function as the first argument:
+    - `quintTest(test, name, opts)` instead of `quintTest(name, opts)`
+    - `quintIt(it.effect, name, opts)` instead of `quintIt(name, opts)`
+  - `quintRun` no longer requires `FileSystem | Path | CommandExecutor` in its Effect requirements type
+
+  Other changes:
+
+  - CLI subprocess handling rewritten to use Node.js APIs directly (child_process, fs/promises)
+  - Added child process cleanup finalizer for interruption safety
+  - Rust backend "step" action (no-op) now silently skipped in typed driver mode
+  - Removed all unnecessary `Effect.scoped` wrappers
+
 ## 0.6.3
 
 ### Patch Changes

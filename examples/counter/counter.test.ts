@@ -5,7 +5,7 @@
  * Uses Zod for pick/state schemas and the `quintTest` vitest helper.
  */
 import * as path from "node:path"
-import { describe } from "vitest"
+import { describe, test } from "vitest"
 import { z } from "zod"
 
 import { ITFBigInt } from "../../src/zod.js"
@@ -32,7 +32,7 @@ const counterDriver = defineDriver(
 
 // 3. Use quintTest to wire it all up
 describe("Counter MBT", () => {
-  quintTest("replays Quint traces against TS implementation", {
+  quintTest(test, "replays Quint traces against TS implementation", {
     spec: path.join(import.meta.dirname, "specs", "counter.qnt"),
     driver: counterDriver,
     stateCheck: stateCheck(
