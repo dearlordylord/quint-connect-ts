@@ -25,7 +25,7 @@ pnpm add @firfi/quint-connect
 pnpm add zod
 
 # For Effect API:
-pnpm add @firfi/quint-connect effect @effect/platform-node
+pnpm add @firfi/quint-connect effect
 
 # For Effect vitest helper (quintIt):
 pnpm add -D @effect/vitest
@@ -115,42 +115,39 @@ For full control (custom error channels, services, resource management), import 
 ```ts
 import { defineDriver, quintRun, stateCheck, ITFBigInt } from "@firfi/quint-connect/effect"
 import { Effect, Schema } from "effect"
-import { NodeContext } from "@effect/platform-node"
 
 const CounterState = Schema.Struct({ count: ITFBigInt })
 
-const program = quintRun({
-  spec: "./counter.qnt",
-  nTraces: 10,
-  maxSteps: 20,
-  seed: "1",
-  driverFactory: defineDriver(
-    { Increment: { amount: ITFBigInt } },
-    () => {
-      let count = 0n
-      return {
-        Increment: ({ amount }) =>         // bigint — inferred from schema
-          Effect.sync(() => {
-            count += amount
-          }),
-        getState: () => Effect.succeed({ count }),
-      }
-    }
-  ),
-  stateCheck: stateCheck(
-    (raw) => Schema.decodeUnknown(CounterState)(raw).pipe(Effect.orDie),
-    (spec, impl) => spec.count === impl.count,
-  ),
-})
-
 const result = await Effect.runPromise(
-  program.pipe(Effect.provide(NodeContext.layer))
+  quintRun({
+    spec: "./counter.qnt",
+    nTraces: 10,
+    maxSteps: 20,
+    seed: "1",
+    driverFactory: defineDriver(
+      { Increment: { amount: ITFBigInt } },
+      () => {
+        let count = 0n
+        return {
+          Increment: ({ amount }) =>         // bigint — inferred from schema
+            Effect.sync(() => {
+              count += amount
+            }),
+          getState: () => Effect.succeed({ count }),
+        }
+      }
+    ),
+    stateCheck: stateCheck(
+      (raw) => Schema.decodeUnknownEffect(CounterState)(raw).pipe(Effect.orDie),
+      (spec, impl) => spec.count === impl.count,
+    ),
+  })
 )
 
 console.log(result.tracesReplayed, result.seed)
 ```
 
-No `Effect.scoped` needed — resource management (temp directories) is handled internally by `quintRun`.
+No `Effect.scoped` or `Effect.provide` needed — resource management and Node.js services are handled internally.
 
 See [examples/counter/counter-effect.test.ts](examples/counter/counter-effect.test.ts) for a complete runnable vitest example.
 
@@ -160,8 +157,9 @@ Simple API helper (no Effect dependency needed):
 
 ```ts
 import { quintTest } from "@firfi/quint-connect/vitest-simple"
+import { test } from "vitest"
 
-quintTest("my test", {
+quintTest(test, "my test", {
   spec: "./myspec.qnt",
   driver: myDriver,
 })
@@ -171,14 +169,15 @@ Effect API helper (requires `@effect/vitest`):
 
 ```ts
 import { quintIt } from "@firfi/quint-connect/vitest"
+import { it } from "@effect/vitest"
 
-quintIt("my test", {
+quintIt(it.effect, "my test", {
   spec: "./myspec.qnt",
   driverFactory: myDriver,
 })
 ```
 
-Both accept an optional third argument for timeout (default: 30s).
+The first argument is the test function from your own vitest/`@effect/vitest` instance — this avoids vitest instance collisions when the library and your project use different vitest versions. Both accept an optional fourth argument for timeout (default: 30s).
 
 ## API
 
