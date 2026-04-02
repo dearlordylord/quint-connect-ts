@@ -1,5 +1,12 @@
 # @firfi/quint-connect
 
+## 0.7.2
+
+### Patch Changes
+
+- 470c9cc: Don't force --seed when user doesn't specify one. Without --seed, quint uses fresh random seeds per sample, giving much better coverage for specs with many phase-guarded actions. The generated seed is still reported in error messages for reproducibility.
+- 2e8f9ac: Always pass seed to quint for reproducible failures
+
 ## 0.7.1
 
 ### Patch Changes
