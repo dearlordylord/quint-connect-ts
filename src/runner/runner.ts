@@ -273,8 +273,12 @@ export type QuintRunOptions<
   readonly concurrency?: number | undefined
 }
 
-const resolveSeed = (opts: RunOptions): string =>
-  opts.seed ?? process.env["QUINT_SEED"] ?? `0x${Math.floor(Math.random() * 0xFFFFFFFF).toString(16).padStart(8, "0")}`
+/** Resolve the seed for error reporting. Only passes --seed to quint when user-specified. */
+const resolveSeed = (opts: RunOptions): { readonly seed: string; readonly userProvided: boolean } => {
+  const explicit = opts.seed ?? process.env["QUINT_SEED"]
+  if (explicit !== undefined) return { seed: explicit, userProvided: true }
+  return { seed: `0x${Math.floor(Math.random() * 0xFFFFFFFF).toString(16).padStart(8, "0")}`, userProvided: false }
+}
 
 export const quintRun = <
   S,
@@ -289,8 +293,11 @@ export const quintRun = <
   R
 > =>
   Effect.gen(function*() {
-    const seed = resolveSeed(opts)
-    const traces = yield* generateTraces({ ...opts, seed })
+    const { seed, userProvided } = resolveSeed(opts)
+    // Only pass --seed to quint when user-specified. Without --seed, quint uses
+    // fresh random seeds per sample — much better coverage for specs with many guards.
+    const traceOpts = userProvided ? { ...opts, seed } : opts
+    const traces = yield* generateTraces(traceOpts)
     if (traces.length === 0) {
       return yield* new NoTracesError({
         message: "quint run produced no traces"
