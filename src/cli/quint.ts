@@ -2,7 +2,7 @@ import { Effect, Schema } from "effect"
 import { spawn } from "node:child_process"
 import { existsSync, readdirSync } from "node:fs"
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
-import { homedir, tmpdir } from "node:os"
+import { cpus, homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { ItfTrace } from "../itf/schema.js"
@@ -235,9 +235,7 @@ const runFromCompiledInput = (
 
     // Match quint run's thread calculation: Math.min(maxSamples, cpuCount).
     // Must be >= 2 to avoid a deadlock bug in the Rust evaluator (v0.5.0).
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const nodeOs = require("node:os") as typeof import("node:os")
-    const nThreads = Math.max(2, Math.min(maxSamples, nodeOs.cpus().length))
+    const nThreads = Math.max(2, Math.min(maxSamples, cpus().length))
 
     // Use simple string replacement to avoid parsing the entire 7MB JSON
     let patchedInput = rawInput
