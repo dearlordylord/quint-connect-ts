@@ -1,5 +1,15 @@
 # @firfi/quint-connect
 
+## 0.8.2
+
+### Patch Changes
+
+- Fix zombie evaluator processes and seed patching for compiled input
+
+  - Register `process.on("exit")` handlers in both `runEvaluatorDirect` and `runQuintProcess` to kill the evaluator process group on any exit (timeout, SIGKILL, OOM) — not just Effect fiber interrupt
+  - Fix seed patching for compiled-input path: inject seed field when it's missing from the cached JSON instead of silently skipping
+  - Add `warnZombieEvaluators()` at the start of `generateTraces` — warns if running `quint_evaluator` processes are detected
+
 ## 0.8.0
 
 ### Minor Changes
