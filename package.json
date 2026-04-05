@@ -57,7 +57,7 @@
     "ci": "pnpm build && pnpm typecheck && pnpm lint && pnpm test",
     "circular": "madge --extensions ts --circular src",
     "local-release": "changeset version && changeset publish",
-    "prepublishOnly": "pnpm ci && node --input-type=module -e \"await import('./dist/index.js'); await import('./dist/effect.js')\" || (echo 'dist/ smoke import failed' && exit 1)"
+    "prepublishOnly": "pnpm run ci && node --input-type=module -e \"await import('./dist/index.js'); await import('./dist/effect.js')\" || (echo 'dist/ smoke import failed' && exit 1)"
   },
   "keywords": [
     "quint",
