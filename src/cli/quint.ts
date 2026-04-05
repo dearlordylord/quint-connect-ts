@@ -110,12 +110,16 @@ const runQuintProcess = (
       const proc = spawn(cmd, cmdArgs, { env, detached: true })
       let stderr = ""
       proc.stdout.resume()
-      proc.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString() })
+      proc.stderr.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString()
+      })
       proc.on("close", (code) => resume(Effect.succeed({ exitCode: code ?? 1, stderr })))
       proc.on("error", (e) => {
         if ((e as NodeJS.ErrnoException).code === "ENOENT" && cmd === "quint") {
           // quint not on PATH — fall back to npx (~3s slower)
-          console.warn("[quint-connect] 'quint' not found on PATH, falling back to npx (slower). Install globally: npm i -g @informalsystems/quint")
+          console.warn(
+            "[quint-connect] 'quint' not found on PATH, falling back to npx (slower). Install globally: npm i -g @informalsystems/quint"
+          )
           activeProc = startProc("npx", ["@informalsystems/quint", ...cmdArgs])
         } else {
           resume(Effect.fail(new QuintNotFoundError({ message: `Failed to start quint: ${e}` })))
@@ -123,11 +127,15 @@ const runQuintProcess = (
       })
       return proc
     }
-    // eslint-disable-next-line prefer-const -- reassigned in ENOENT fallback
+
     let activeProc = startProc("quint", [...args])
     return Effect.sync(() => {
       // Kill the entire process group (quint + quint_evaluator)
-      try { process.kill(-activeProc.pid!, "SIGKILL") } catch { activeProc.kill("SIGKILL") }
+      try {
+        process.kill(-activeProc.pid!, "SIGKILL")
+      } catch {
+        activeProc.kill("SIGKILL")
+      }
     })
   })
 
@@ -178,8 +186,12 @@ const runEvaluatorDirect = (
     proc.stdin.write(inputStr)
     proc.stdin.end()
 
-    proc.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString() })
-    proc.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString() })
+    proc.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString()
+    })
+    proc.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString()
+    })
     proc.on("close", (code) => {
       resume(Effect.succeed({ stdout, exitCode: code ?? 1, stderr }))
     })
@@ -187,7 +199,11 @@ const runEvaluatorDirect = (
       resume(Effect.fail(new QuintNotFoundError({ message: `Failed to start Rust evaluator: ${e}` })))
     })
     return Effect.sync(() => {
-      try { process.kill(-proc.pid!, "SIGKILL") } catch { proc.kill("SIGKILL") }
+      try {
+        process.kill(-proc.pid!, "SIGKILL")
+      } catch {
+        proc.kill("SIGKILL")
+      }
     })
   })
 
@@ -219,8 +235,9 @@ const runFromCompiledInput = (
 
     // Match quint run's thread calculation: Math.min(maxSamples, cpuCount).
     // Must be >= 2 to avoid a deadlock bug in the Rust evaluator (v0.5.0).
-    const { cpus } = require("node:os") as typeof import("node:os")
-    const nThreads = Math.max(2, Math.min(maxSamples, cpus().length))
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const nodeOs = require("node:os") as typeof import("node:os")
+    const nThreads = Math.max(2, Math.min(maxSamples, nodeOs.cpus().length))
 
     // Use simple string replacement to avoid parsing the entire 7MB JSON
     let patchedInput = rawInput
@@ -256,6 +273,7 @@ const runFromCompiledInput = (
     // Parse the evaluator's JSON output to extract ITF traces
     // The output format is: { status, errors, bestTraces: [{ seed, states: ITF, ... }], ... }
     // We need to extract states from bestTraces and write them as individual ITF trace files.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- evaluator output is untyped JSON
     let parsed: any
     try {
       // The output might contain non-JSON lines (progress, warnings) before the JSON result.
@@ -268,14 +286,16 @@ const runFromCompiledInput = (
       // Parse with integer-to-bigint reviver to match `quint run --out-itf` behavior.
       // Quint's `json-bigint` library serializes all integers as bigints in ITF traces.
       parsed = JSON.parse(jsonLine, (_key, value) =>
-        typeof value === "number" && Number.isInteger(value) ? BigInt(value) : value
-      )
+        typeof value === "number" && Number.isInteger(value) ? BigInt(value) : value)
     } catch (e) {
       return yield* new QuintError({ message: `Failed to parse evaluator output: ${e}` })
     }
 
     if (parsed.status === "error") {
-      const errMsgs = (parsed.errors || []).map((e: any) => e.message || String(e)).join("\n")
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped evaluator output
+      const errMsgs = (parsed.errors || []).map((e: any) =>
+        e.message || String(e)
+      ).join("\n")
       return yield* new QuintError({ message: `Quint simulation error:\n${errMsgs}` })
     }
 
@@ -299,11 +319,11 @@ const runFromCompiledInput = (
       }
       // Convert BigInts (from our integer-to-bigint reviver) to ITF #bigint encoding
       const itfContent = JSON.stringify(itfObj, (_key, value) =>
-        typeof value === "bigint" ? { "#bigint": String(value) } : value
-      )
+        typeof value === "bigint" ? { "#bigint": String(value) } : value)
       const filePath = join(outDir, `trace_${i}.itf.json`)
       yield* Effect.tryPromise({
-        try: () => writeFile(filePath, itfContent),
+        try: () =>
+          writeFile(filePath, itfContent),
         catch: (e) => new QuintError({ message: `Failed to write trace file: ${e}` })
       })
     }
