@@ -116,17 +116,18 @@ const runQuintProcess = (
         if ((e as NodeJS.ErrnoException).code === "ENOENT" && cmd === "quint") {
           // quint not on PATH — fall back to npx (~3s slower)
           console.warn("[quint-connect] 'quint' not found on PATH, falling back to npx (slower). Install globally: npm i -g @informalsystems/quint")
-          proc = startProc("npx", ["@informalsystems/quint", ...cmdArgs])
+          activeProc = startProc("npx", ["@informalsystems/quint", ...cmdArgs])
         } else {
           resume(Effect.fail(new QuintNotFoundError({ message: `Failed to start quint: ${e}` })))
         }
       })
       return proc
     }
-    let proc = startProc("quint", [...args])
+    // eslint-disable-next-line prefer-const -- reassigned in ENOENT fallback
+    let activeProc = startProc("quint", [...args])
     return Effect.sync(() => {
       // Kill the entire process group (quint + quint_evaluator)
-      try { process.kill(-proc.pid!, "SIGKILL") } catch { proc.kill("SIGKILL") }
+      try { process.kill(-activeProc.pid!, "SIGKILL") } catch { activeProc.kill("SIGKILL") }
     })
   })
 
