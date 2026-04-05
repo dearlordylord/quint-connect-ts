@@ -105,14 +105,25 @@ const runQuintProcess = (
     const env = verbose ? { ...process.env, QUINT_VERBOSE: "true" } : process.env
     // detached: true creates a new process group so we can kill the entire tree
     // (quint spawns quint_evaluator as a child — plain proc.kill() leaves it orphaned)
-    const proc = spawn("quint", args, { env, detached: true })
-    let stderr = ""
-    proc.stdout.resume()
-    proc.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString()
-    })
-    proc.on("close", (code) => resume(Effect.succeed({ exitCode: code ?? 1, stderr })))
-    proc.on("error", (e) => resume(Effect.fail(new QuintNotFoundError({ message: `Failed to start quint: ${e}` }))))
+    // Try direct `quint` first (avoids ~3s npx overhead), fall back to npx on ENOENT
+    const startProc = (cmd: string, cmdArgs: ReadonlyArray<string>) => {
+      const proc = spawn(cmd, cmdArgs, { env, detached: true })
+      let stderr = ""
+      proc.stdout.resume()
+      proc.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString() })
+      proc.on("close", (code) => resume(Effect.succeed({ exitCode: code ?? 1, stderr })))
+      proc.on("error", (e) => {
+        if ((e as NodeJS.ErrnoException).code === "ENOENT" && cmd === "quint") {
+          // quint not on PATH — fall back to npx (~3s slower)
+          console.warn("[quint-connect] 'quint' not found on PATH, falling back to npx (slower). Install globally: npm i -g @informalsystems/quint")
+          proc = startProc("npx", ["@informalsystems/quint", ...cmdArgs])
+        } else {
+          resume(Effect.fail(new QuintNotFoundError({ message: `Failed to start quint: ${e}` })))
+        }
+      })
+      return proc
+    }
+    let proc = startProc("quint", [...args])
     return Effect.sync(() => {
       // Kill the entire process group (quint + quint_evaluator)
       try { process.kill(-proc.pid!, "SIGKILL") } catch { proc.kill("SIGKILL") }
