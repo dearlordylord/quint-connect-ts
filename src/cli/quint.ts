@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect"
-import { spawn } from "node:child_process"
+import { execSync, spawn } from "node:child_process"
 import { existsSync, readdirSync } from "node:fs"
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { cpus, homedir, tmpdir } from "node:os"
@@ -113,7 +113,10 @@ const runQuintProcess = (
       proc.stderr.on("data", (chunk: Buffer) => {
         stderr += chunk.toString()
       })
-      proc.on("close", (code) => resume(Effect.succeed({ exitCode: code ?? 1, stderr })))
+      proc.on("close", (code) => {
+        process.removeListener("exit", killGroup)
+        resume(Effect.succeed({ exitCode: code ?? 1, stderr }))
+      })
       proc.on("error", (e) => {
         if ((e as NodeJS.ErrnoException).code === "ENOENT" && cmd === "quint") {
           // quint not on PATH — fall back to npx (~3s slower)
@@ -122,20 +125,30 @@ const runQuintProcess = (
           )
           activeProc = startProc("npx", ["@informalsystems/quint", ...cmdArgs])
         } else {
+          process.removeListener("exit", killGroup)
           resume(Effect.fail(new QuintNotFoundError({ message: `Failed to start quint: ${e}` })))
         }
       })
       return proc
     }
 
+    // Kill the process group on ANY process exit — prevents zombie evaluators
+    // when the test runner exits abnormally (timeout, SIGKILL, OOM).
+    // Must be declared before startProc because startProc's close handler references it.
+    let killGroup = () => {}
+
     let activeProc = startProc("quint", [...args])
-    return Effect.sync(() => {
-      // Kill the entire process group (quint + quint_evaluator)
+
+    killGroup = () => {
       try {
         process.kill(-activeProc.pid!, "SIGKILL")
-      } catch {
-        activeProc.kill("SIGKILL")
-      }
+      } catch { /* already dead */ }
+    }
+    process.on("exit", killGroup)
+
+    return Effect.sync(() => {
+      process.removeListener("exit", killGroup)
+      killGroup()
     })
   })
 
@@ -182,6 +195,16 @@ const runEvaluatorDirect = (
       detached: true
     })
 
+    // Kill the evaluator process group on ANY process exit — not just Effect interrupt.
+    // Without this, zombie evaluators survive when the test runner exits abnormally
+    // (timeout, SIGKILL, OOM) and accumulate at 100% CPU, causing 40x slowdowns.
+    const killGroup = () => {
+      try {
+        process.kill(-proc.pid!, "SIGKILL")
+      } catch { /* already dead */ }
+    }
+    process.on("exit", killGroup)
+
     // Write directly to stdin (no file round-trip)
     proc.stdin.write(inputStr)
     proc.stdin.end()
@@ -193,17 +216,16 @@ const runEvaluatorDirect = (
       stderr += chunk.toString()
     })
     proc.on("close", (code) => {
+      process.removeListener("exit", killGroup)
       resume(Effect.succeed({ stdout, exitCode: code ?? 1, stderr }))
     })
     proc.on("error", (e) => {
+      process.removeListener("exit", killGroup)
       resume(Effect.fail(new QuintNotFoundError({ message: `Failed to start Rust evaluator: ${e}` })))
     })
     return Effect.sync(() => {
-      try {
-        process.kill(-proc.pid!, "SIGKILL")
-      } catch {
-        proc.kill("SIGKILL")
-      }
+      process.removeListener("exit", killGroup)
+      killGroup()
     })
   })
 
@@ -244,13 +266,23 @@ const runFromCompiledInput = (
       .replace(/"ntraces":\s*\d+/, `"ntraces":${nTraces}`)
       .replace(/"nthreads":\s*\d+/, `"nthreads":${nThreads}`)
 
-    if (opts.seed !== undefined) {
-      // Seed can be a hex string like "0xfa2124eb" — convert to bigint for the evaluator
-      const seedBigint = opts.seed.startsWith("0x")
-        ? BigInt(opts.seed)
-        : BigInt(`0x${opts.seed}`)
-      patchedInput = patchedInput.replace(/"seed":\s*(?:null|undefined|\d+)/, `"seed":${seedBigint}`)
+    // Always patch a seed so it's known before the evaluator starts (for debugging timeouts).
+    // If the user provided one, use it; otherwise generate a random one.
+    const seedBigint = opts.seed !== undefined
+      ? (opts.seed.startsWith("0x") ? BigInt(opts.seed) : BigInt(`0x${opts.seed}`))
+      : BigInt(`0x${Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join("")}`)
+    const seedHex = `0x${seedBigint.toString(16)}`
+    const seedReplaced = patchedInput.replace(/"seed":\s*(?:null|undefined|\d+)/, `"seed":${seedBigint}`)
+    if (seedReplaced === patchedInput) {
+      // The compiled input has no "seed" field — inject it before the closing "}"
+      // This happens when compile-battle-spec.cjs omits the seed field.
+      patchedInput = patchedInput.replace(/}\s*$/, `,"seed":${seedBigint}}`)
+    } else {
+      patchedInput = seedReplaced
     }
+
+    // Always log seed so it's known before the evaluator starts (for debugging timeouts/hangs).
+    console.error(`[quint-connect] seed: ${seedHex} (compiled-input path)`)
 
     // Write patched input directly to stdin (matching commandWrapper.simulate behavior).
     // CRITICAL: Do NOT read from file — the file round-trip through Node.js readFile/createReadStream
@@ -435,9 +467,28 @@ const generateTracesWithTempDir = (
     (tmpDir) => Effect.promise(() => rm(tmpDir, { recursive: true, force: true }).catch(() => {}))
   )
 
+/** Warn if zombie quint_evaluator processes are running — they cause 40x slowdowns. */
+const warnZombieEvaluators = (): void => {
+  try {
+    const result = execSync("pgrep -c quint_evaluator", { stdio: ["pipe", "pipe", "pipe"] }).toString().trim()
+    const count = parseInt(result, 10)
+    if (count > 0) {
+      console.warn(
+        `[quint-connect] WARNING: Found ${count} running quint_evaluator process(es). `
+          + `These consume 100% CPU each and will slow down this run by ~40x. `
+          + `Kill them: killall -9 quint_evaluator`
+      )
+    }
+  } catch {
+    // pgrep returns exit code 1 when no processes match — expected
+  }
+}
+
 export const generateTraces = (
   opts: RunOptions
-): Effect.Effect<ReadonlyArray<ItfTrace>, QuintError | QuintNotFoundError> =>
-  opts.traceDir !== undefined
+): Effect.Effect<ReadonlyArray<ItfTrace>, QuintError | QuintNotFoundError> => {
+  warnZombieEvaluators()
+  return opts.traceDir !== undefined
     ? generateTracesWithTraceDir(opts, opts.traceDir)
     : generateTracesWithTempDir(opts)
+}
