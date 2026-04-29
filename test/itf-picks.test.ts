@@ -48,7 +48,7 @@ describe("pick decoding", () => {
     Effect.gen(function*() {
       const decode = buildEffectPicksDecoder(Schema.Struct({
         amount: ITFBigInt,
-        label: Schema.String
+        label: Schema.UndefinedOr(Schema.String)
       }))
 
       const result = yield* decode({
@@ -62,10 +62,26 @@ describe("pick decoding", () => {
       })
     }))
 
-  it.effect("buildEffectPicksDecoder treats absent picks as undefined", () =>
+  it.effect("buildEffectPicksDecoder rejects absent required picks", () =>
     Effect.gen(function*() {
       const decode = buildEffectPicksDecoder(Schema.Struct({
         amount: ITFBigInt
+      }))
+
+      const result = yield* decode({}).pipe(
+        Effect.match({
+          onFailure: () => "failed" as const,
+          onSuccess: () => "succeeded" as const
+        })
+      )
+
+      expect(result).toBe("failed")
+    }))
+
+  it.effect("buildEffectPicksDecoder allows absent optional picks", () =>
+    Effect.gen(function*() {
+      const decode = buildEffectPicksDecoder(Schema.Struct({
+        amount: Schema.UndefinedOr(ITFBigInt)
       }))
 
       const result = yield* decode({})
@@ -121,5 +137,10 @@ describe("pick decoding", () => {
 
     expect(() => pickFrom(new Map([["amount", { tag: "Other" }]]), "amount", z.bigint()))
       .toThrow("pickFrom \"amount\": expected Option tag \"Some\" or \"None\", got: \"Other\"")
+  })
+
+  it("pickFrom validates malformed Some values instead of treating them as None", () => {
+    expect(() => pickFrom(new Map([["amount", { tag: "Some" }]]), "amount", z.bigint()))
+      .toThrow("pickFrom \"amount\" validation failed")
   })
 })

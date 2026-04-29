@@ -1,6 +1,6 @@
 import { transformITFValue } from "@firfi/itf-trace-parser"
 import type { StandardSchemaV1 } from "@standard-schema/spec"
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 
 import { ItfOption } from "./schema.js"
 
@@ -22,15 +22,36 @@ const assumeNoSchemaRequirements = (
 
 export const buildEffectPicksDecoder = <Fields extends EffectPicksFields>(
   picksShape: Schema.Struct<Fields>
-) => {
-  const wrappedFields = Object.fromEntries(
-    Object.entries(picksShape.fields).map(([key, fieldSchema]) => [
-      key,
-      assumeNoSchemaRequirements(Schema.UndefinedOr(ItfOption(Schema.asSchema(fieldSchema))))
-    ])
-  )
-  return Schema.decodeUnknown(Schema.Struct(wrappedFields))
-}
+) =>
+(rawPicks: unknown) =>
+  Effect.gen(function*() {
+    if (typeof rawPicks !== "object" || rawPicks === null) {
+      return yield* Schema.decodeUnknown(Schema.Struct({}))(rawPicks)
+    }
+
+    const record = rawPicks as { readonly [key: string]: unknown }
+    const decoded: Record<string, unknown> = {}
+
+    for (const [key, fieldSchema] of Object.entries(picksShape.fields)) {
+      const schema = assumeNoSchemaRequirements(Schema.asSchema(fieldSchema))
+      const raw = record[key]
+
+      if (raw === undefined) {
+        decoded[key] = yield* Schema.decodeUnknown(schema)(undefined)
+        continue
+      }
+
+      const value = yield* Schema.decodeUnknown(ItfOption(schema))(raw)
+      if (value === undefined) {
+        decoded[key] = yield* Schema.decodeUnknown(schema)(undefined)
+        continue
+      }
+
+      decoded[key] = value
+    }
+
+    return decoded as typeof picksShape.Type
+  })
 
 const formatIssues = (issues: ReadonlyArray<StandardSchemaV1.Issue>): string =>
   issues.map((issue) => issue.message).join(", ")
@@ -75,18 +96,21 @@ export const decodeStandardPicks = async <Fields extends StandardPicksSchema>(
   return Object.fromEntries(decoded) as StandardPicksOutput<Fields>
 }
 
-const unwrapQuintOptionPick = (raw: unknown, key: string): unknown | undefined => {
+const unwrapQuintOptionPick = (
+  raw: unknown,
+  key: string
+): { readonly present: false } | { readonly present: true; readonly value: unknown } | undefined => {
   if (raw === undefined) return undefined
   if (typeof raw !== "object" || raw === null || !("tag" in raw)) {
     throw new Error(`pickFrom "${key}": expected Quint Option (Some/None), got: ${JSON.stringify(raw)}`)
   }
 
   const variant = raw as { readonly tag: string; readonly value?: unknown }
-  if (variant.tag === "None") return undefined
+  if (variant.tag === "None") return { present: false }
   if (variant.tag !== "Some") {
     throw new Error(`pickFrom "${key}": expected Option tag "Some" or "None", got: "${variant.tag}"`)
   }
-  return variant.value
+  return { present: true, value: variant.value }
 }
 
 export const pickFrom = <T>(
@@ -94,6 +118,6 @@ export const pickFrom = <T>(
   key: string,
   schema: StandardSchemaV1<unknown, T>
 ): T | undefined => {
-  const rawValue = unwrapQuintOptionPick(nondetPicks.get(key), key)
-  return rawValue === undefined ? undefined : decodeStandardPickValueSync(rawValue, key, schema)
+  const pick = unwrapQuintOptionPick(nondetPicks.get(key), key)
+  return pick === undefined || !pick.present ? undefined : decodeStandardPickValueSync(pick.value, key, schema)
 }
