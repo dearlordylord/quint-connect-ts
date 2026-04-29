@@ -5,6 +5,7 @@ import type { StandardSchemaV1 } from "@standard-schema/spec"
 
 import type { RunOptions } from "./cli/quint.js"
 import type { ActionMap, AnyActionDef, Config, Driver } from "./driver/types.js"
+import { decodeStandardPicks } from "./itf/picks.js"
 import { quintRun } from "./runner/runner.js"
 
 export type { RunOptions } from "./cli/quint.js"
@@ -148,19 +149,7 @@ const wrapAction = (
     picks: Schema.Struct(fields),
     handler: (rawPicks) =>
       Effect.promise(async () => {
-        const decoded: Record<string, unknown> = {}
-        for (const [key, schema] of Object.entries(actionDef.picks)) {
-          const raw = rawPicks[key]
-          const transformed = raw === undefined ? undefined : transformITFValue(raw)
-          const result = schema["~standard"].validate(transformed)
-          const resolved = result instanceof Promise ? await result : result
-          if (resolved.issues) {
-            throw new Error(
-              `Pick "${key}" validation failed: ${resolved.issues.map((i) => i.message).join(", ")}`
-            )
-          }
-          decoded[key] = resolved.value
-        }
+        const decoded = await decodeStandardPicks(rawPicks, actionDef.picks)
         await Promise.resolve(actionDef.handler(decoded))
       })
   }
@@ -218,33 +207,5 @@ export const run = <S, Actions extends SimpleActionMap>(
   })
 }
 
-export const pickFrom = <T>(
-  nondetPicks: ReadonlyMap<string, unknown>,
-  key: string,
-  schema: StandardSchemaV1<unknown, T>
-): T | undefined => {
-  const raw = nondetPicks.get(key)
-  if (raw === undefined) return undefined
-  // Unwrap Quint Option: { tag: "Some", value: x } | { tag: "None", ... }
-  if (typeof raw !== "object" || raw === null || !("tag" in raw)) {
-    throw new Error(`pickFrom "${key}": expected Quint Option (Some/None), got: ${JSON.stringify(raw)}`)
-  }
-  const variant = raw as { tag: string; value?: unknown }
-  if (variant.tag === "None") return undefined
-  if (variant.tag !== "Some") {
-    throw new Error(`pickFrom "${key}": expected Option tag "Some" or "None", got: "${variant.tag}"`)
-  }
-  const transformed = transformITFValue(variant.value)
-  const result = schema["~standard"].validate(transformed)
-  if (result instanceof Promise) {
-    throw new Error("pickFrom does not support async schemas")
-  }
-  if (result.issues) {
-    throw new Error(
-      `pickFrom "${key}" validation failed: ${result.issues.map((i) => i.message).join(", ")}`
-    )
-  }
-  return result.value
-}
-
 export { transformITFValue } from "@firfi/itf-trace-parser"
+export { pickFrom } from "./itf/picks.js"

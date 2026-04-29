@@ -3,8 +3,9 @@ import type { QuintError, QuintNotFoundError, RunOptions } from "../cli/quint.js
 import { generateTraces } from "../cli/quint.js"
 import type { AnyActionDef, Config, Driver, PartialActionMap, StateComparator } from "../driver/types.js"
 import { defaultConfig } from "../driver/types.js"
+import { buildEffectPicksDecoder } from "../itf/picks.js"
 import type { ItfTrace, MbtMeta } from "../itf/schema.js"
-import { ItfOption, MbtMeta as MbtMetaSchema } from "../itf/schema.js"
+import { MbtMeta as MbtMetaSchema } from "../itf/schema.js"
 
 export class StateMismatchError extends Schema.TaggedError<StateMismatchError>()("StateMismatchError", {
   message: Schema.String,
@@ -89,16 +90,6 @@ const extractFromNondetPath = (
   return Effect.succeed({ action, nondetPicks: picks })
 }
 
-const buildPicksDecoder = (picksShape: AnyActionDef["picks"]) => {
-  const wrappedFields = Object.fromEntries(
-    Object.entries(picksShape.fields).map(([key, fieldSchema]) => [
-      key,
-      Schema.UndefinedOr(ItfOption(Schema.asSchema(fieldSchema)))
-    ])
-  )
-  return Schema.decodeUnknown(Schema.Struct(wrappedFields))
-}
-
 const resolveRawState = (
   rawState: { readonly [key: string]: unknown },
   statePath: ReadonlyArray<string>
@@ -121,7 +112,7 @@ export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
       ? new Map(
         Object.entries(driver.actions)
           .filter((entry): entry is [string, AnyActionDef<E, R>] => entry[1] !== undefined)
-          .map(([name, def]) => [name, buildPicksDecoder(def.picks)])
+          .map(([name, def]) => [name, buildEffectPicksDecoder(def.picks)])
       )
       : undefined
 
@@ -189,7 +180,7 @@ export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
           })
         }
 
-        const decode = picksDecoders?.get(action) ?? buildPicksDecoder(actionDef.picks)
+        const decode = picksDecoders?.get(action) ?? buildEffectPicksDecoder(actionDef.picks)
         const decodedPicks = yield* Effect.mapError(
           decode(Object.fromEntries(nondetPicks)),
           (cause) =>
@@ -275,7 +266,8 @@ export type QuintRunOptions<
 
 /** Resolve the seed. Always generates a real seed so failures are reproducible. */
 const resolveSeed = (opts: RunOptions): string => {
-  return opts.seed ?? process.env["QUINT_SEED"] ?? `0x${Math.floor(Math.random() * 0xFFFFFFFF).toString(16).padStart(8, "0")}`
+  return opts.seed ?? process.env["QUINT_SEED"]
+    ?? `0x${Math.floor(Math.random() * 0xFFFFFFFF).toString(16).padStart(8, "0")}`
 }
 
 export const quintRun = <
