@@ -1,7 +1,7 @@
 import { Array as Arr, Effect, Predicate, Schema } from "effect"
 import type { QuintError, QuintNotFoundError, RunOptions } from "../cli/quint.js"
 import { generateTraces } from "../cli/quint.js"
-import type { AnyActionDef, Config, Driver, PartialActionMap, StateComparator } from "../driver/types.js"
+import type { ActionMap, AnyActionDef, Config, Driver, StateComparator } from "../driver/types.js"
 import { defaultConfig } from "../driver/types.js"
 import type { ItfTrace, MbtMeta } from "../itf/schema.js"
 import { ItfOption, MbtMeta as MbtMetaSchema } from "../itf/schema.js"
@@ -108,7 +108,7 @@ const resolveRawState = (
     : stripMetadata(rawState)
 
 /** @internal */
-export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
+export const replayTrace = <S, E, R, Actions extends ActionMap<E, R>>(
   trace: ItfTrace,
   traceIndex: number,
   driver: Driver<S, E, R, Actions>,
@@ -117,13 +117,11 @@ export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
   seed: string
 ): Effect.Effect<void, E | StateMismatchError | TraceReplayError, R> =>
   Effect.gen(function*() {
-    const picksDecoders = driver.step === undefined
-      ? new Map(
-        Object.entries(driver.actions)
-          .filter((entry): entry is [string, AnyActionDef<E, R>] => entry[1] !== undefined)
-          .map(([name, def]) => [name, buildPicksDecoder(def.picks)])
-      )
-      : undefined
+    const picksDecoders = new Map(
+      Object.entries(driver.actions)
+        .filter((entry): entry is [string, AnyActionDef<E, R>] => entry[1] !== undefined)
+        .map(([name, def]) => [name, buildPicksDecoder(def.picks)])
+    )
 
     const statePath = config.statePath ?? []
     const nondetPath = config.nondetPath ?? []
@@ -147,84 +145,56 @@ export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
         })
       }
 
-      if (driver.step !== undefined) {
-        yield* driver.step(action, nondetPicks).pipe(
-          Effect.mapError((e: E) =>
-            new TraceReplayError({
-              message: `step failed: ${String(e)}`,
-              traceIndex,
-              stepIndex,
-              action,
-              cause: e
-            })
-          ),
-          Effect.catchAllDefect((defect) =>
-            Effect.fail(
-              new TraceReplayError({
-                message: `step failed: ${String(defect)}`,
-                traceIndex,
-                stepIndex,
-                action,
-                cause: defect
-              })
-            )
-          )
-        )
-      } else {
-        const actionDef = driver.actions[action]
-        if (actionDef === undefined) {
-          // At step 0, action is "init" — skip if no handler defined (convenience so users
-          // don't need an explicit init handler when their constructor already sets up state).
-          if (stepIndex === 0) continue
-          // Rust backend emits "step" when the spec's step action body is a direct no-op
-          // (e.g. state' = state for a dead character). Skip since there's nothing to dispatch.
-          if (action === "step") continue
-          return yield* new TraceReplayError({
-            message: action === "init"
-              ? `Unknown action: init. This is likely the known Quint typescript backend bug (https://github.com/informalsystems/quint/pull/1929) where non-disjunctive step actions report "init" instead of the actual action name. Wrap your step action body in \`any { YourAction, }\` as a workaround, or use \`--backend rust\`.`
-              : `Unknown action: ${action}`,
+      const actionDef = driver.actions[action]
+      if (actionDef === undefined) {
+        // Rust backend emits "step" when the spec's step action body is a direct no-op
+        // (e.g. state' = state for a dead character). Skip since there's nothing to dispatch.
+        if (action === "step") continue
+        return yield* new TraceReplayError({
+          message: action === "init"
+            ? `Unknown action: init. This is likely the known Quint typescript backend bug (https://github.com/informalsystems/quint/pull/1929) where non-disjunctive step actions report "init" instead of the actual action name. Wrap your step action body in \`any { YourAction, }\` as a workaround, or use \`--backend rust\`.`
+            : `Unknown action: ${action}`,
+          traceIndex,
+          stepIndex,
+          action
+        })
+      }
+
+      const decode = picksDecoders.get(action) ?? buildPicksDecoder(actionDef.picks)
+      const decodedPicks = yield* Effect.mapError(
+        decode(Object.fromEntries(nondetPicks)),
+        (cause) =>
+          new TraceReplayError({
+            message: `Failed to decode action picks: ${String(cause)}`,
             traceIndex,
             stepIndex,
-            action
+            action,
+            cause
           })
-        }
+      )
 
-        const decode = picksDecoders?.get(action) ?? buildPicksDecoder(actionDef.picks)
-        const decodedPicks = yield* Effect.mapError(
-          decode(Object.fromEntries(nondetPicks)),
-          (cause) =>
+      yield* actionDef.handler(decodedPicks).pipe(
+        Effect.mapError((e: E) =>
+          new TraceReplayError({
+            message: `Action handler failed: ${String(e)}`,
+            traceIndex,
+            stepIndex,
+            action,
+            cause: e
+          })
+        ),
+        Effect.catchAllDefect((defect) =>
+          Effect.fail(
             new TraceReplayError({
-              message: `Failed to decode action picks: ${String(cause)}`,
+              message: `Action handler failed: ${String(defect)}`,
               traceIndex,
               stepIndex,
               action,
-              cause
+              cause: defect
             })
-        )
-
-        yield* actionDef.handler(decodedPicks).pipe(
-          Effect.mapError((e: E) =>
-            new TraceReplayError({
-              message: `Action handler failed: ${String(e)}`,
-              traceIndex,
-              stepIndex,
-              action,
-              cause: e
-            })
-          ),
-          Effect.catchAllDefect((defect) =>
-            Effect.fail(
-              new TraceReplayError({
-                message: `Action handler failed: ${String(defect)}`,
-                traceIndex,
-                stepIndex,
-                action,
-                cause: defect
-              })
-            )
           )
         )
-      }
+      )
 
       if (stateCheck !== undefined) {
         if (driver.getState === undefined) {
@@ -264,7 +234,7 @@ export type QuintRunOptions<
   S,
   E,
   R,
-  Actions extends PartialActionMap<E, R> = PartialActionMap<E, R>
+  Actions extends ActionMap<E, R> = ActionMap<E, R>
 > = RunOptions & {
   readonly driverFactory: {
     readonly create: () => Effect.Effect<Driver<S, E, R, Actions>, E, R>
@@ -275,14 +245,15 @@ export type QuintRunOptions<
 
 /** Resolve the seed. Always generates a real seed so failures are reproducible. */
 const resolveSeed = (opts: RunOptions): string => {
-  return opts.seed ?? process.env["QUINT_SEED"] ?? `0x${Math.floor(Math.random() * 0xFFFFFFFF).toString(16).padStart(8, "0")}`
+  return opts.seed ?? process.env["QUINT_SEED"]
+    ?? `0x${Math.floor(Math.random() * 0xFFFFFFFF).toString(16).padStart(8, "0")}`
 }
 
 export const quintRun = <
   S,
   E,
   R,
-  Actions extends PartialActionMap<E, R> = PartialActionMap<E, R>
+  Actions extends ActionMap<E, R> = ActionMap<E, R>
 >(
   opts: QuintRunOptions<S, E, R, Actions>
 ): Effect.Effect<

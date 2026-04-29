@@ -8,12 +8,11 @@ import { ITFBigInt as ITFBigIntZod } from "@firfi/itf-trace-parser/zod"
 import { z } from "zod"
 
 import { QuintError } from "../src/cli/quint.js"
-import type { Config, Driver, PartialActionMap } from "../src/driver/types.js"
+import type { Config, Driver } from "../src/driver/types.js"
 import { defineDriver, stateCheck } from "../src/effect.js"
 import { quintRun, TraceReplayError } from "../src/runner/runner.js"
 import {
   defineDriver as defineDriverSimple,
-  pickFrom,
   run,
   stateCheck as simpleStateCheck,
   StateMismatchError as SimpleStateMismatchError,
@@ -28,10 +27,11 @@ const specDir = path.resolve(import.meta.dirname, "specs")
 
 const createCounterDriverFactory = () =>
   defineDriver(
-    { Increment: { amount: ITFBigInt } },
+    { init: {}, Increment: { amount: ITFBigInt } },
     () => {
       let count = 0n
       return {
+        init: () => Effect.void,
         Increment: ({ amount }) =>
           Effect.sync(() => {
             count += amount
@@ -44,8 +44,7 @@ const createCounterDriverFactory = () =>
 const createCounterDriverWithoutActions = (): Driver<
   typeof CounterStateSchema.Type,
   never,
-  never,
-  PartialActionMap
+  never
 > => ({
   actions: {},
   getState: () => Effect.succeed({ count: 0n })
@@ -53,8 +52,9 @@ const createCounterDriverWithoutActions = (): Driver<
 
 const createStatelessCounterDriverFactory = () =>
   defineDriver(
-    { Increment: { amount: ITFBigInt } },
+    { init: {}, Increment: { amount: ITFBigInt } },
     () => ({
+      init: () => Effect.void,
       Increment: () => Effect.void
     })
   )
@@ -139,62 +139,54 @@ describe("Integration: counter spec", () => {
     }), { timeout: 30000 })
 })
 
-describe("Integration: raw mode", () => {
-  it("simple API raw mode with defineDriver(factory) and pickFrom", { timeout: 30000 }, async () => {
-    const steps: Array<{ action: string; amount: bigint | undefined }> = []
+describe("Integration: typed dispatch", () => {
+  it("simple API dispatches decoded action picks", { timeout: 30000 }, async () => {
+    const amounts: Array<bigint> = []
     const result = await run({
       spec: path.join(specDir, "counter.qnt"),
       nTraces: 1,
       maxSamples: 2,
       maxSteps: 3,
       seed: "1",
-      driver: defineDriverSimple(() => ({
-        step: (action, nondetPicks) => {
-          const amount = pickFrom(nondetPicks, "amount", ITFBigIntZod)
-          steps.push({ action, amount })
-        }
-      }))
+      driver: defineDriverSimple(
+        { init: {}, Increment: { amount: ITFBigIntZod } },
+        () => ({
+          init: () => {},
+          Increment: ({ amount }) => {
+            amounts.push(amount)
+          }
+        })
+      )
     })
 
     expect(result.tracesReplayed).toBeGreaterThan(0)
-    expect(steps.length).toBeGreaterThan(1)
-    // Step 0: TS backend reports "init" placeholder (Rust backend would report actual init action name)
-    expect(steps[0].action).toBe("init")
-    // Step 1+: actual action names
-    expect(steps[1].action).toBe("Increment")
-    expect(typeof steps[1].amount).toBe("bigint")
+    expect(amounts.length).toBeGreaterThan(0)
+    expect(typeof amounts[0]).toBe("bigint")
   })
 
-  it.effect("effect-level raw mode with manual Driver step", () =>
+  it.effect("effect API dispatches decoded action picks", () =>
     Effect.gen(function*() {
-      const steps: Array<{ action: string; picks: ReadonlyMap<string, unknown> }> = []
+      const amounts: Array<bigint> = []
       yield* quintRun({
         spec: path.join(specDir, "counter.qnt"),
         nTraces: 1,
         maxSamples: 2,
         maxSteps: 3,
         seed: "1",
-        driverFactory: {
-          create: () => {
-            const driver: Driver<unknown, never, never, PartialActionMap> = {
-              actions: {},
-              step: (action: string, picks: ReadonlyMap<string, unknown>) =>
-                Effect.sync(() => {
-                  steps.push({ action, picks })
-                })
-            }
-            return Effect.succeed(driver)
-          }
-        }
+        driverFactory: defineDriver(
+          { init: {}, Increment: { amount: ITFBigInt } },
+          () => ({
+            init: () => Effect.void,
+            Increment: ({ amount }) =>
+              Effect.sync(() => {
+                amounts.push(amount)
+              })
+          })
+        )
       })
 
-      expect(steps.length).toBeGreaterThan(1)
-      // Step 0: TS backend reports "init" placeholder
-      expect(steps[0].action).toBe("init")
-      // Step 1+: actual action names
-      expect(steps[1].action).toBe("Increment")
-      expect(steps[1].picks).toBeInstanceOf(Map)
-      expect(steps[1].picks.has("amount")).toBe(true)
+      expect(amounts.length).toBeGreaterThan(0)
+      expect(typeof amounts[0]).toBe("bigint")
     }), { timeout: 30000 })
 })
 
@@ -209,10 +201,11 @@ const nestedConfig: Config = {
 
 const createNestedDriverFactory = () =>
   defineDriver(
-    { Increment: { amount: ITFBigInt } },
+    { init: {}, Increment: { amount: ITFBigInt } },
     () => {
       let count = 0n
       return {
+        init: () => Effect.void,
         Increment: ({ amount }) =>
           Effect.sync(() => {
             count += amount
@@ -265,19 +258,17 @@ describe("Integration: multi-module spec with qualified state keys", () => {
         maxSamples: 2,
         maxSteps: 3,
         seed: "1",
-        driverFactory: {
-          create: () => {
-            const driver: Driver<unknown, never, never, PartialActionMap> = {
-              actions: {},
-              step: (action, _nondetPicks) =>
-                Effect.sync(() => {
-                  actions.push(action)
-                }),
-              getState: () => Effect.succeed({})
-            }
-            return Effect.succeed(driver)
-          }
-        },
+        driverFactory: defineDriver(
+          { init: {}, Increment: { amount: ITFBigInt } },
+          () => ({
+            init: () => Effect.void,
+            Increment: () =>
+              Effect.sync(() => {
+                actions.push("Increment")
+              }),
+            getState: () => Effect.succeed({})
+          })
+        ),
         stateCheck: stateCheck(
           (raw) => {
             if (typeof raw === "object" && raw !== null) {
@@ -298,20 +289,18 @@ describe("Integration: multi-module spec with qualified state keys", () => {
       // Instance state keys are fully qualified: "mainModule::alias::variable"
       expect(keys).toContain("multimod::ctr::count")
       // Actions are NOT qualified
-      expect(actions.length).toBeGreaterThan(1)
-      // Step 0: TS backend reports "init" placeholder
-      expect(actions[0]).toBe("init")
-      // Step 1+: actual action names
-      expect(actions[1]).toBe("Increment")
+      expect(actions.length).toBeGreaterThan(0)
+      expect(actions[0]).toBe("Increment")
     }), { timeout: 30000 })
 
   it.effect("full replay with state check using qualified keys", () =>
     Effect.gen(function*() {
       const factory = defineDriver(
-        { Increment: { amount: ITFBigInt } },
+        { init: {}, Increment: { amount: ITFBigInt } },
         () => {
           let count = 0n
           return {
+            init: () => Effect.void,
             Increment: ({ amount }) =>
               Effect.sync(() => {
                 count += amount
@@ -354,11 +343,12 @@ describe("Integration: statePath through qualified key", () => {
       const rawStates: Array<Record<string, unknown>> = []
 
       const factory = defineDriver(
-        { Increment: { amount: ITFBigInt } },
+        { init: {}, Increment: { amount: ITFBigInt } },
         () => {
           let count = 0n
           let label = "start"
           return {
+            init: () => Effect.void,
             Increment: ({ amount }) =>
               Effect.sync(() => {
                 count += amount
@@ -402,10 +392,11 @@ describe("Integration: statePath through qualified key", () => {
 
 const createPartialConfigDriverFactory = () =>
   defineDriver(
-    { Increment: { amount: ITFBigInt } },
+    { init: {}, Increment: { amount: ITFBigInt } },
     () => {
       let count = 0n
       return {
+        init: () => Effect.void,
         Increment: ({ amount }) =>
           Effect.sync(() => {
             count += amount
@@ -493,8 +484,9 @@ describe("Simple API: error unwrapping", () => {
         maxSteps: 3,
         seed: "1",
         driver: defineDriverSimple(
-          { Increment: { amount: ITFBigIntZod } },
+          { init: {}, Increment: { amount: ITFBigIntZod } },
           () => ({
+            init: () => {},
             Increment: () => {
               // intentionally do nothing — state will mismatch
             },
@@ -525,8 +517,9 @@ describe("Simple API: error unwrapping", () => {
         maxSteps: 3,
         seed: "1",
         driver: defineDriverSimple(
-          { Increment: { amount: ITFBigIntZod } },
+          { init: {}, Increment: { amount: ITFBigIntZod } },
           () => ({
+            init: () => {},
             Increment: () => {
               throw new Error("handler crash")
             }

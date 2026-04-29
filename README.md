@@ -66,10 +66,11 @@ const result = await run({
   maxSteps: 20,
   seed: "1",
   driver: defineDriver(
-    { Increment: { amount: ITFBigInt } },
+    { init: {}, Increment: { amount: ITFBigInt } },
     () => {
       let count = 0n
       return {
+        init: () => {},
         Increment: ({ amount }) => {       // amount: bigint — inferred from schema
           count += amount
         },
@@ -125,10 +126,11 @@ const result = await Effect.runPromise(
     maxSteps: 20,
     seed: "1",
     driverFactory: defineDriver(
-      { Increment: { amount: ITFBigInt } },
+      { init: {}, Increment: { amount: ITFBigInt } },
       () => {
         let count = 0n
         return {
+          init: () => Effect.void,
           Increment: ({ amount }) =>         // bigint — inferred from schema
             Effect.sync(() => {
               count += amount
@@ -184,8 +186,6 @@ The first argument is the test function from your own vitest/`@effect/vitest` in
 ### Simple API (`@firfi/quint-connect`)
 
 - **`defineDriver(schema, factory)`** — define a typed driver with per-field Standard Schema picks. `schema` maps action names to `{ fieldName: StandardSchema }`. `factory` returns handlers (with inferred pick types) + optional `getState`/`config`. Compile error if a handler is missing. Actions with no `nondet` picks use an empty schema: `{ Toggle: {} }`.
-- **`defineDriver(factory)`** — define a raw driver. `factory` returns `{ step, getState?, config? }`. See [Raw mode](#raw-mode).
-- **`pickFrom(nondetPicks, key, schema)`** — extract a single pick from raw nondet picks: unwrap Quint Option, transform ITF value, validate with Standard Schema. Returns `T | undefined`.
 - **`stateCheck(deserialize, compare)`** — helper that infers the state type from `deserialize` and contextually types `compare`'s parameters. Needed because TypeScript cannot infer generic type parameters across sibling callbacks in an object literal.
 - **`run(opts)`** — generate traces and replay them through a driver. Returns `Promise<{ tracesReplayed, seed }>`.
 
@@ -222,14 +222,14 @@ Shared by `run`, `quintRun`, and `generateTraces`:
 
 | Field | Type | Description |
 |---|---|---|
-| `driver` | `() => SimpleDriver<State>` | Creates a fresh driver per trace. Use `defineDriver` to create. |
+| `driver` | `() => SimpleDriver<State>` | Creates a fresh action-map driver per trace. Use `defineDriver` to create. |
 | `stateCheck` | `stateCheck(deserialize, compare)` | Optional. Compare spec vs impl state after each step. Use `stateCheck()` helper for type inference. |
 
 `quintRun` additionally accepts:
 
 | Field | Type | Description |
 |---|---|---|
-| `driverFactory` | `{ create: () => Effect<Driver<S, E, R>> }` | Creates a fresh driver per trace. Use `defineDriver` to create. |
+| `driverFactory` | `{ create: () => Effect<Driver<S, E, R>> }` | Creates a fresh action-map driver per trace. Use `defineDriver` to create. |
 | `stateCheck` | `stateCheck(deserialize, compare)` | Optional. Compare spec vs impl state after each step. Use `stateCheck()` helper for type inference. |
 
 ### Config
@@ -255,9 +255,9 @@ When using `statePath`, both `deserializeState` and `getState` should work with 
 
 Step 0 (the init state) is processed like any other action, matching the Rust [quint-connect](https://github.com/informalsystems/quint-connect) behavior. The `mbt::actionTaken` field determines the action name.
 
-With the **Rust backend** (`backend: "rust"`), init has a proper action name (e.g. `"Init"`) — define it in your action map or handle it in `step()`. State comparison runs at step 0 too.
+With the **Rust backend** (`backend: "rust"`), init has a proper action name (e.g. `"Init"`) — define it in your action map if you want it dispatched. If it is not mapped, replay fails with `TraceReplayError`; if it is mapped, state comparison runs at step 0 too.
 
-With the **TypeScript backend** (default), `mbt::actionTaken` is empty at step 0 (a known Quint TS backend limitation), so step 0 is silently skipped.
+With the **TypeScript backend** (default), some traces report an empty `mbt::actionTaken` at step 0; only that empty placeholder is skipped. If the trace reports a non-empty action such as `"init"`, define that action in your map or replay fails with `TraceReplayError`.
 
 ### Additional Exports
 
@@ -303,38 +303,6 @@ quintRun(opts).pipe(
 ```
 
 `StateMismatchError` has `traceIndex`, `stepIndex`, `expected`, `actual`. `TraceReplayError` has `traceIndex`, `stepIndex`, `action`, `cause`.
-
-### Raw mode
-
-For full manual control (no schema, no typed dispatch), use the single-argument `defineDriver(factory)` overload. The factory returns a `step` callback that receives the action name and raw nondet picks:
-
-```ts
-import { defineDriver, run, pickFrom } from "@firfi/quint-connect"
-import { ITFBigInt } from "@firfi/quint-connect/zod"
-
-const result = await run({
-  spec: "./counter.qnt",
-  nTraces: 10,
-  maxSteps: 20,
-  seed: "1",
-  driver: defineDriver(() => {
-    let count = 0n
-    return {
-      step: (action, nondetPicks) => {
-        if (action === "Increment") {
-          const amount = pickFrom(nondetPicks, "amount", ITFBigInt)
-          if (amount !== undefined) count += amount
-        }
-      },
-      getState: () => ({ count }),
-    }
-  }),
-})
-```
-
-**`pickFrom(nondetPicks, key, schema)`** extracts a single pick: unwraps the Quint Option (`Some`/`None`), applies `transformITFValue`, and validates with the given Standard Schema. Returns `T | undefined` (`undefined` when the key is missing or `None`).
-
-For fully manual ITF decoding, use the re-exported `transformITFValue` from `@firfi/itf-trace-parser`.
 
 ### Deterministic specs
 
