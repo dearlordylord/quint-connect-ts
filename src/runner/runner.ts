@@ -5,13 +5,14 @@ import type { AnyActionDef, Config, Driver, PartialActionMap } from "../driver/t
 import { defaultConfig } from "../driver/types.js"
 import type { ItfTrace, MbtMeta } from "../itf/schema.js"
 import { ItfOption, MbtMeta as MbtMetaSchema } from "../itf/schema.js"
+import type { StateMismatchError } from "./errors.js"
 import { NoTracesError, TraceReplayError } from "./errors.js"
-import type { StateCheck, StateMismatchError } from "./state-check.js"
+import type { StateCheck } from "./state-check.js"
 import { checkReplayState, resolveNestedValue } from "./state-check.js"
 
-export { NoTracesError, TraceReplayError } from "./errors.js"
+export { NoTracesError, StateMismatchError, TraceReplayError } from "./errors.js"
 export type { StateCheck } from "./state-check.js"
-export { jsonReplacer, StateMismatchError, stripMetadata } from "./state-check.js"
+export { jsonReplacer, stripMetadata } from "./state-check.js"
 
 const extractMbtMeta = (
   state: { readonly [key: string]: unknown },

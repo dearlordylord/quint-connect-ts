@@ -4,8 +4,8 @@ import { expect } from "vitest"
 
 import { ITFBigInt } from "@firfi/itf-trace-parser/effect"
 
-import { TraceReplayError } from "../src/runner/errors.js"
-import { checkReplayState, projectState, StateMismatchError } from "../src/runner/state-check.js"
+import { StateMismatchError, TraceReplayError } from "../src/runner/errors.js"
+import { checkReplayState, projectState } from "../src/runner/state-check.js"
 
 describe("runner state-check module", () => {
   it("projects state by stripping metadata when no statePath is configured", () => {
@@ -99,5 +99,29 @@ describe("runner state-check module", () => {
         expect(result.message).toContain("5n")
         expect(result.message).toContain("999n")
       }
+    }))
+
+  it.effect("preserves the driver receiver when reading implementation state", () =>
+    Effect.gen(function*() {
+      const driver = {
+        count: 5n,
+        getState() {
+          return Effect.succeed({ count: this.count })
+        }
+      }
+
+      yield* checkReplayState({
+        rawState: { count: { "#bigint": "5" } },
+        statePath: [],
+        driver,
+        stateCheck: {
+          deserializeState: (raw) => Schema.decodeUnknown(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie),
+          compareState: (spec, impl) => spec.count === impl.count
+        },
+        traceIndex: 0,
+        stepIndex: 1,
+        action: "Increment",
+        seed: "abc123"
+      })
     }))
 })

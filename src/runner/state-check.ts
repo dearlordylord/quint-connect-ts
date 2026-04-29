@@ -1,16 +1,7 @@
-import { Effect, Predicate, Schema } from "effect"
+import { Effect, Predicate } from "effect"
 
 import type { StateComparator } from "../driver/types.js"
-import { TraceReplayError } from "./errors.js"
-
-export class StateMismatchError extends Schema.TaggedError<StateMismatchError>()("StateMismatchError", {
-  message: Schema.String,
-  traceIndex: Schema.Number,
-  stepIndex: Schema.Number,
-  expected: Schema.Unknown,
-  actual: Schema.Unknown,
-  showDiff: Schema.optionalWith(Schema.Boolean, { default: () => true })
-}) {}
+import { StateMismatchError, TraceReplayError } from "./errors.js"
 
 export interface StateCheck<S> {
   readonly compareState: StateComparator<S>
@@ -70,8 +61,7 @@ export const checkReplayState = <S, E, R>(
   opts: CheckReplayStateOptions<S, E, R>
 ): Effect.Effect<void, E | StateMismatchError | TraceReplayError, R> =>
   Effect.gen(function*() {
-    const getState = opts.driver.getState
-    if (getState === undefined) {
+    if (opts.driver.getState === undefined) {
       return yield* new TraceReplayError({
         message:
           "stateCheck is provided but driver.getState is not defined; getState is required when stateCheck is provided",
@@ -82,7 +72,7 @@ export const checkReplayState = <S, E, R>(
     }
 
     const specState = yield* opts.stateCheck.deserializeState(projectState(opts.rawState, opts.statePath))
-    const implState = yield* getState()
+    const implState = yield* opts.driver.getState()
 
     if (!opts.stateCheck.compareState(specState, implState)) {
       return yield* new StateMismatchError({
