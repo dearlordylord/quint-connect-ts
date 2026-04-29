@@ -5,6 +5,7 @@ import type { StandardSchemaV1 } from "@standard-schema/spec"
 
 import type { RunOptions } from "./cli/quint.js"
 import type { ActionMap, AnyActionDef, Config, Driver } from "./driver/types.js"
+import { decodeStandardPicks } from "./itf/picks.js"
 import { quintRun } from "./runner/runner.js"
 
 export type { RunOptions } from "./cli/quint.js"
@@ -140,19 +141,7 @@ const wrapAction = (
     picks: Schema.Struct(fields),
     handler: (rawPicks) =>
       Effect.promise(async () => {
-        const decoded: Record<string, unknown> = {}
-        for (const [key, schema] of Object.entries(actionDef.picks)) {
-          const raw = rawPicks[key]
-          const transformed = raw === undefined ? undefined : transformITFValue(raw)
-          const result = schema["~standard"].validate(transformed)
-          const resolved = result instanceof Promise ? await result : result
-          if (resolved.issues) {
-            throw new Error(
-              `Pick "${key}" validation failed: ${resolved.issues.map((i) => i.message).join(", ")}`
-            )
-          }
-          decoded[key] = resolved.value
-        }
+        const decoded = await decodeStandardPicks(rawPicks, actionDef.picks)
         await Promise.resolve(actionDef.handler(decoded))
       })
   }
