@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 
-import type { Driver, PartialActionMap } from "../driver/types.js"
+import type { PartialActionMap } from "../driver/types.js"
 import type { PicksDecoder } from "./replay-actions.js"
 import { buildPicksDecoder } from "./replay-actions.js"
 import type { ReplayActionContext, TraceReplayError } from "./replay-errors.js"
@@ -8,29 +8,19 @@ import { traceReplayError, unknownActionMessage, withTraceReplayError } from "./
 
 type DispatchReplayResult = "dispatched" | "skipped"
 
-const shouldSkipMissingAction = (action: string, stepIndex: number): boolean => stepIndex === 0 || action === "step"
+const shouldSkipMissingAction = (action: string, stepIndex: number): boolean =>
+  (stepIndex === 0 && action === "init") || action === "step"
 
-export const dispatchReplayAction = <S, E, R, Actions extends PartialActionMap<E, R>>(
-  driver: Driver<S, E, R, Actions>,
+export const dispatchReplayAction = <E, R>(
+  actions: PartialActionMap<E, R>,
   action: string,
   nondetPicks: ReadonlyMap<string, unknown>,
   context: ReplayActionContext,
   picksDecoders: ReadonlyMap<string, PicksDecoder> | undefined
 ): Effect.Effect<DispatchReplayResult, TraceReplayError, R> =>
   Effect.gen(function*() {
-    if (driver.step !== undefined) {
-      yield* withTraceReplayError(
-        driver.step(action, nondetPicks),
-        context,
-        (cause) => `step failed: ${String(cause)}`
-      )
-      return "dispatched" as const
-    }
-
-    const actionDef = driver.actions[action]
+    const actionDef = actions[action]
     if (actionDef === undefined) {
-      // At step 0, action is "init"; skip if no handler defined (convenience so users
-      // don't need an explicit init handler when their constructor already sets up state).
       // Rust backend emits "step" when the spec's step action body is a direct no-op.
       if (shouldSkipMissingAction(action, context.stepIndex)) {
         return "skipped" as const

@@ -22,6 +22,16 @@ const extractMbtMeta = (
     (cause) => traceReplayError(actionContext(context, "unknown"), `Failed to extract MBT metadata: ${cause}`)
   )
 
+const isItfOption = (value: unknown): boolean =>
+  Predicate.isRecord(value) && (value["tag"] === "Some" || value["tag"] === "None")
+
+const normalizeNondetPathPick = (value: unknown): unknown => isItfOption(value) ? value : { tag: "Some", value }
+
+const normalizeNondetPathPicks = (value: unknown): ReadonlyMap<string, unknown> =>
+  Predicate.isRecord(value)
+    ? new Map(Object.entries(value).map(([key, pick]) => [key, normalizeNondetPathPick(pick)]))
+    : new Map<string, unknown>()
+
 const extractFromNondetPath = (
   state: TraceStateRecord,
   nondetPath: ReadonlyArray<string>,
@@ -38,8 +48,7 @@ const extractFromNondetPath = (
   }
   const action = raw["tag"]
   const value = raw["value"]
-  const picks = Predicate.isRecord(value) ? new Map(Object.entries(value)) : new Map<string, unknown>()
-  return Effect.succeed({ action, nondetPicks: picks })
+  return Effect.succeed({ action, nondetPicks: normalizeNondetPathPicks(value) })
 }
 
 export const extractReplayAction = (

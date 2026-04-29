@@ -83,7 +83,10 @@ describe("replay action extraction", () => {
       )
 
       expect(action.action).toBe("Move")
-      expect(Object.fromEntries(action.nondetPicks)).toEqual({ from: "a", to: "b" })
+      expect(Object.fromEntries(action.nondetPicks)).toEqual({
+        from: { tag: "Some", value: "a" },
+        to: { tag: "Some", value: "b" }
+      })
     }))
 
   it.effect("adds replay context when nondetPath is not a sum type", () =>
@@ -125,7 +128,7 @@ describe("replay dispatch helper", () => {
       const driver = yield* factory.create()
 
       const result = yield* dispatchReplayAction(
-        driver,
+        driver.actions,
         "Increment",
         new Map([["amount", { tag: "Some", value: { "#bigint": "7" } }]]),
         actionContext({ traceIndex: 0, stepIndex: 1 }, "Increment"),
@@ -136,21 +139,57 @@ describe("replay dispatch helper", () => {
       expect(dispatched).toEqual([7n])
     }))
 
-  it.effect("preserves the existing missing-action skip cases", () =>
+  it.effect("dispatches raw nondetPath picks after extraction normalizes them", () =>
+    Effect.gen(function*() {
+      const dispatched: Array<string> = []
+      const factory = defineDriver(
+        { Move: { from: Schema.String } },
+        () => ({
+          Move: ({ from }) =>
+            Effect.sync(() => {
+              dispatched.push(from)
+            })
+        })
+      )
+      const driver = yield* factory.create()
+      const replayAction = yield* extractReplayAction(
+        {
+          choice: {
+            tag: "Move",
+            value: { from: "a" }
+          }
+        },
+        ["choice"],
+        { traceIndex: 0, stepIndex: 1 }
+      )
+
+      const result = yield* dispatchReplayAction(
+        driver.actions,
+        replayAction.action,
+        replayAction.nondetPicks,
+        actionContext({ traceIndex: 0, stepIndex: 1 }, replayAction.action),
+        undefined
+      )
+
+      expect(result).toBe("dispatched")
+      expect(dispatched).toEqual(["a"])
+    }))
+
+  it.effect("preserves documented missing-action skips", () =>
     Effect.gen(function*() {
       const emptyDriver: Driver<unknown, never, never, PartialActionMap> = {
         actions: {}
       }
 
       const initResult = yield* dispatchReplayAction(
-        emptyDriver,
+        emptyDriver.actions,
         "init",
         new Map(),
         actionContext({ traceIndex: 0, stepIndex: 0 }, "init"),
         undefined
       )
       const noOpResult = yield* dispatchReplayAction(
-        emptyDriver,
+        emptyDriver.actions,
         "step",
         new Map(),
         actionContext({ traceIndex: 0, stepIndex: 3 }, "step"),
@@ -159,6 +198,34 @@ describe("replay dispatch helper", () => {
 
       expect(initResult).toBe("skipped")
       expect(noOpResult).toBe("skipped")
+    }))
+
+  it.effect("errors for missing non-empty action handler at step 0", () =>
+    Effect.gen(function*() {
+      const emptyDriver: Driver<unknown, never, never, PartialActionMap> = {
+        actions: {}
+      }
+
+      const result = yield* dispatchReplayAction(
+        emptyDriver.actions,
+        "Init",
+        new Map(),
+        actionContext({ traceIndex: 0, stepIndex: 0 }, "Init"),
+        undefined
+      ).pipe(
+        Effect.match({
+          onFailure: (e) => e,
+          onSuccess: () => undefined
+        })
+      )
+
+      expect(result).toBeInstanceOf(TraceReplayError)
+      if (result instanceof TraceReplayError) {
+        expect(result.message).toBe("Unknown action: Init")
+        expect(result.traceIndex).toBe(0)
+        expect(result.stepIndex).toBe(0)
+        expect(result.action).toBe("Init")
+      }
     }))
 })
 

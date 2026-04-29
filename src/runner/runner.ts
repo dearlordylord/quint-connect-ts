@@ -13,7 +13,8 @@ import {
   StateMismatchError,
   stateMismatchError,
   TraceReplayError,
-  traceReplayError
+  traceReplayError,
+  withTraceReplayError
 } from "./replay-errors.js"
 import { normalizeTraceState, stripMetadata } from "./trace-state.js"
 
@@ -47,8 +48,16 @@ export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
         return yield* traceReplayError(context, `Anonymous action at trace ${traceIndex}, step ${stepIndex}`)
       }
 
-      const dispatchResult = yield* dispatchReplayAction(driver, action, nondetPicks, context, picksDecoders)
-      if (dispatchResult === "skipped") continue
+      if (driver.step !== undefined) {
+        yield* withTraceReplayError(
+          driver.step(action, nondetPicks),
+          context,
+          (cause) => `step failed: ${String(cause)}`
+        )
+      } else {
+        const dispatchResult = yield* dispatchReplayAction(driver.actions, action, nondetPicks, context, picksDecoders)
+        if (dispatchResult === "skipped") continue
+      }
 
       if (stateCheck !== undefined) {
         if (driver.getState === undefined) {
