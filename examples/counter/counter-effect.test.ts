@@ -17,10 +17,11 @@ const CounterState = Schema.Struct({ count: ITFBigInt })
 
 // 2. Define driver with Effect Schema per-field picks
 const counterDriver = defineDriver(
-  { Increment: { amount: ITFBigInt } },
+  { init: {}, Increment: { amount: ITFBigInt } },
   () => {
     let count = 0n
     return {
+      init: () => Effect.void,
       Increment: ({ amount }) =>
         Effect.sync(() => {
           count += amount

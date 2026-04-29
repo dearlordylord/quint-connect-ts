@@ -66,10 +66,11 @@ const result = await run({
   maxSteps: 20,
   seed: "1",
   driver: defineDriver(
-    { Increment: { amount: ITFBigInt } },
+    { init: {}, Increment: { amount: ITFBigInt } },
     () => {
       let count = 0n
       return {
+        init: () => {},
         Increment: ({ amount }) => {       // amount: bigint — inferred from schema
           count += amount
         },
@@ -125,10 +126,11 @@ const result = await Effect.runPromise(
     maxSteps: 20,
     seed: "1",
     driverFactory: defineDriver(
-      { Increment: { amount: ITFBigInt } },
+      { init: {}, Increment: { amount: ITFBigInt } },
       () => {
         let count = 0n
         return {
+          init: () => Effect.void,
           Increment: ({ amount }) =>         // bigint — inferred from schema
             Effect.sync(() => {
               count += amount
@@ -253,9 +255,9 @@ When using `statePath`, both `deserializeState` and `getState` should work with 
 
 Step 0 (the init state) is processed like any other action, matching the Rust [quint-connect](https://github.com/informalsystems/quint-connect) behavior. The `mbt::actionTaken` field determines the action name.
 
-With the **Rust backend** (`backend: "rust"`), init has a proper action name (e.g. `"Init"`) — define it in your action map if you want it dispatched. State comparison runs at step 0 too.
+With the **Rust backend** (`backend: "rust"`), init has a proper action name (e.g. `"Init"`) — define it in your action map if you want it dispatched. If it is not mapped, replay fails with `TraceReplayError`; if it is mapped, state comparison runs at step 0 too.
 
-With the **TypeScript backend** (default), `mbt::actionTaken` is empty at step 0 (a known Quint TS backend limitation), so step 0 is silently skipped.
+With the **TypeScript backend** (default), some traces report an empty `mbt::actionTaken` at step 0; only that empty placeholder is skipped. If the trace reports a non-empty action such as `"init"`, define that action in your map or replay fails with `TraceReplayError`.
 
 ### Additional Exports
 

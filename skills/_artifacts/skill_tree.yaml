@@ -17,7 +17,7 @@ skills:
     path: 'skills/quint-connect-ts-setup/SKILL.md'
     description: >
       Scaffold a quint-connect-ts model-based test from a Quint spec. Covers
-      defineDriver (typed and raw), run/quintRun, stateCheck, RunOptions,
+      defineDriver (typed action-map), run/quintRun, stateCheck, RunOptions,
       simple API (Standard Schema) vs Effect API (Effect Schema), vitest
       helpers (quintTest, quintIt), Config (statePath, nondetPath).
     sources:

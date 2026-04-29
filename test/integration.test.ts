@@ -27,10 +27,11 @@ const specDir = path.resolve(import.meta.dirname, "specs")
 
 const createCounterDriverFactory = () =>
   defineDriver(
-    { Increment: { amount: ITFBigInt } },
+    { init: {}, Increment: { amount: ITFBigInt } },
     () => {
       let count = 0n
       return {
+        init: () => Effect.void,
         Increment: ({ amount }) =>
           Effect.sync(() => {
             count += amount
@@ -51,8 +52,9 @@ const createCounterDriverWithoutActions = (): Driver<
 
 const createStatelessCounterDriverFactory = () =>
   defineDriver(
-    { Increment: { amount: ITFBigInt } },
+    { init: {}, Increment: { amount: ITFBigInt } },
     () => ({
+      init: () => Effect.void,
       Increment: () => Effect.void
     })
   )
@@ -147,8 +149,9 @@ describe("Integration: typed dispatch", () => {
       maxSteps: 3,
       seed: "1",
       driver: defineDriverSimple(
-        { Increment: { amount: ITFBigIntZod } },
+        { init: {}, Increment: { amount: ITFBigIntZod } },
         () => ({
+          init: () => {},
           Increment: ({ amount }) => {
             amounts.push(amount)
           }
@@ -171,8 +174,9 @@ describe("Integration: typed dispatch", () => {
         maxSteps: 3,
         seed: "1",
         driverFactory: defineDriver(
-          { Increment: { amount: ITFBigInt } },
+          { init: {}, Increment: { amount: ITFBigInt } },
           () => ({
+            init: () => Effect.void,
             Increment: ({ amount }) =>
               Effect.sync(() => {
                 amounts.push(amount)
@@ -197,10 +201,11 @@ const nestedConfig: Config = {
 
 const createNestedDriverFactory = () =>
   defineDriver(
-    { Increment: { amount: ITFBigInt } },
+    { init: {}, Increment: { amount: ITFBigInt } },
     () => {
       let count = 0n
       return {
+        init: () => Effect.void,
         Increment: ({ amount }) =>
           Effect.sync(() => {
             count += amount
@@ -254,8 +259,9 @@ describe("Integration: multi-module spec with qualified state keys", () => {
         maxSteps: 3,
         seed: "1",
         driverFactory: defineDriver(
-          { Increment: { amount: ITFBigInt } },
+          { init: {}, Increment: { amount: ITFBigInt } },
           () => ({
+            init: () => Effect.void,
             Increment: () =>
               Effect.sync(() => {
                 actions.push("Increment")
@@ -290,10 +296,11 @@ describe("Integration: multi-module spec with qualified state keys", () => {
   it.effect("full replay with state check using qualified keys", () =>
     Effect.gen(function*() {
       const factory = defineDriver(
-        { Increment: { amount: ITFBigInt } },
+        { init: {}, Increment: { amount: ITFBigInt } },
         () => {
           let count = 0n
           return {
+            init: () => Effect.void,
             Increment: ({ amount }) =>
               Effect.sync(() => {
                 count += amount
@@ -336,11 +343,12 @@ describe("Integration: statePath through qualified key", () => {
       const rawStates: Array<Record<string, unknown>> = []
 
       const factory = defineDriver(
-        { Increment: { amount: ITFBigInt } },
+        { init: {}, Increment: { amount: ITFBigInt } },
         () => {
           let count = 0n
           let label = "start"
           return {
+            init: () => Effect.void,
             Increment: ({ amount }) =>
               Effect.sync(() => {
                 count += amount
@@ -384,10 +392,11 @@ describe("Integration: statePath through qualified key", () => {
 
 const createPartialConfigDriverFactory = () =>
   defineDriver(
-    { Increment: { amount: ITFBigInt } },
+    { init: {}, Increment: { amount: ITFBigInt } },
     () => {
       let count = 0n
       return {
+        init: () => Effect.void,
         Increment: ({ amount }) =>
           Effect.sync(() => {
             count += amount
@@ -475,8 +484,9 @@ describe("Simple API: error unwrapping", () => {
         maxSteps: 3,
         seed: "1",
         driver: defineDriverSimple(
-          { Increment: { amount: ITFBigIntZod } },
+          { init: {}, Increment: { amount: ITFBigIntZod } },
           () => ({
+            init: () => {},
             Increment: () => {
               // intentionally do nothing — state will mismatch
             },
@@ -507,8 +517,9 @@ describe("Simple API: error unwrapping", () => {
         maxSteps: 3,
         seed: "1",
         driver: defineDriverSimple(
-          { Increment: { amount: ITFBigIntZod } },
+          { init: {}, Increment: { amount: ITFBigIntZod } },
           () => ({
+            init: () => {},
             Increment: () => {
               throw new Error("handler crash")
             }

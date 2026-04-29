@@ -2,11 +2,11 @@
 name: quint-connect-ts-setup
 description: >
   Scaffold a quint-connect model-based test from a Quint spec. Covers
-  defineDriver (typed mode with per-field picks, raw mode with step callback),
+  defineDriver (typed action-map mode with per-field picks),
   run/quintRun, stateCheck, RunOptions (spec, nTraces, maxSteps, seed, backend),
   simple API (@firfi/quint-connect, Standard Schema) vs Effect API
   (@firfi/quint-connect/effect, Effect Schema), vitest helpers (quintTest,
-  quintIt), Config (statePath, nondetPath), pickFrom. Use when setting up a
+  quintIt), Config (statePath, nondetPath). Use when setting up a
   new quint-connect test, wiring a driver, choosing an API surface, or adding
   state checking.
 type: core
@@ -91,10 +91,11 @@ import { quintTest } from "@firfi/quint-connect/vitest-simple"
 const CounterState = z.object({ count: z.bigint() })
 
 const counterDriver = defineDriver(
-  { Increment: { amount: ITFBigInt } },
+  { init: {}, Increment: { amount: ITFBigInt } },
   () => {
     let count = 0n
     return {
+      init: () => {},
       Increment: ({ amount }) => {
         count += amount
       },
@@ -134,10 +135,11 @@ import { quintIt } from "@firfi/quint-connect/vitest"
 const CounterState = Schema.Struct({ count: ITFBigInt })
 
 const counterDriver = defineDriver(
-  { Increment: { amount: ITFBigInt } },
+  { init: {}, Increment: { amount: ITFBigInt } },
   () => {
     let count = 0n
     return {
+      init: () => Effect.void,
       Increment: ({ amount }) =>
         Effect.sync(() => { count += amount }),
       getState: () => Effect.succeed({ count }),
@@ -165,10 +167,11 @@ Actions without `nondet` use an empty schema object:
 
 ```ts
 const driver = defineDriver(
-  { Increment: { amount: ITFBigInt }, Reset: {} },
+  { init: {}, Increment: { amount: ITFBigInt }, Reset: {} },
   () => {
     let count = 0n
     return {
+      init: () => {},
       Increment: ({ amount }) => { count += amount },
       Reset: () => { count = 0n },
       getState: () => ({ count }),
@@ -177,26 +180,30 @@ const driver = defineDriver(
 )
 ```
 
-### Use raw step() mode for manual control
+### Add an action handler for manual control
 
-Single-argument `defineDriver` overload. Receives action name and raw nondet picks:
+Drivers dispatch through an action map. Add one handler per Quint action and declare the nondet picks that handler needs:
 
 ```ts
-import { defineDriver, run, pickFrom } from "@firfi/quint-connect"
+import { defineDriver, run } from "@firfi/quint-connect"
 import { ITFBigInt } from "@firfi/quint-connect/zod"
 
-const driver = defineDriver(() => {
-  let count = 0n
-  return {
-    step: (action, nondetPicks) => {
-      if (action === "Increment") {
-        const amount = pickFrom(nondetPicks, "amount", ITFBigInt)
-        if (amount !== undefined) count += amount
-      }
-    },
-    getState: () => ({ count }),
+const driver = defineDriver(
+  { init: {}, Increment: { amount: ITFBigInt }, Reset: {} },
+  () => {
+    let count = 0n
+    return {
+      init: () => {},
+      Increment: ({ amount }) => {
+        count += amount
+      },
+      Reset: () => {
+        count = 0n
+      },
+      getState: () => ({ count }),
+    }
   }
-})
+)
 ```
 
 ### Use statePath for nested state
@@ -208,9 +215,10 @@ var routingState: { count: int }
 ```
 
 ```ts
-const driver = defineDriver({ Increment: { amount: ITFBigInt } }, () => {
+const driver = defineDriver({ init: {}, Increment: { amount: ITFBigInt } }, () => {
   let count = 0n
   return {
+    init: () => {},
     Increment: ({ amount }) => { count += amount },
     getState: () => ({ count }),
     config: () => ({ statePath: ["routingState"] }),
@@ -252,7 +260,8 @@ Wrong:
 
 ```ts
 let count = 0n
-const driver = defineDriver({ Increment: { amount: ITFBigInt } }, () => ({
+const driver = defineDriver({ init: {}, Increment: { amount: ITFBigInt } }, () => ({
+  init: () => {},
   Increment: ({ amount }) => { count += amount },
   getState: () => ({ count }),
 }))
@@ -261,9 +270,10 @@ const driver = defineDriver({ Increment: { amount: ITFBigInt } }, () => ({
 Correct:
 
 ```ts
-const driver = defineDriver({ Increment: { amount: ITFBigInt } }, () => {
+const driver = defineDriver({ init: {}, Increment: { amount: ITFBigInt } }, () => {
   let count = 0n
   return {
+    init: () => {},
     Increment: ({ amount }) => { count += amount },
     getState: () => ({ count }),
   }
@@ -368,9 +378,9 @@ Correct:
 ```ts
 test("counter", async () => {
   await run({
-    driver: defineDriver({ Increment: { amount: ITFBigInt } }, () => {
+    driver: defineDriver({ init: {}, Increment: { amount: ITFBigInt } }, () => {
       let count = 0n
-      return { Increment: ({ amount }) => { count += amount } }
+      return { init: () => {}, Increment: ({ amount }) => { count += amount } }
     }),
   })
 })

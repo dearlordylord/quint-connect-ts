@@ -9,7 +9,7 @@ Breaking change. Replace untyped `step(Step)` with declarative action→schema�
 - `Step` is `{ action: string, nondetPicks: ReadonlyMap<string, unknown> }` — forces manual `switch` + `pick()` at every call site
 - `pickAllFrom(step, Schema.Struct)` already decodes all picks for one action (src/itf/picks.ts)
 - `ItfOption`, `ITFBigInt`, `ITFSet`, etc. already handle ITF wire types (via @firfi/itf-trace-parser)
-- Runner skips step 0 (init state) — no init handler needed (runner.ts:98)
+- Runner skips only the empty TypeScript backend step 0 placeholder. Rust/backend init actions are non-empty actions and must be present in the action map to dispatch and run state checking.
 - Codegen from .qnt deferred — quint has no stable AST export for external tools
 
 ### Target API
@@ -120,7 +120,7 @@ Chose (a) — simpler, avoids Schema wrapping gymnastics. The simple path valida
 - Rewrite `test/integration.test.ts` — counter driver becomes `actions: { Increment: { picks: Schema.Struct({ amount: ITFBigInt }), handler } }`
 - Keep vitest helper tests compiling against the updated option types
 - Add test: unknown action from spec not in `actions` map → `TraceReplayError`
-- Add test: type inference — verify picks parameter type matches schema declaration (compile-time check)
+- Add test: type inference — verify picks parameter type matches schema declaration (compile-time check). Done in `test/vitest-helper.test.ts` with positive `expectTypeOf` checks and negative `@ts-expect-error` assignments.
 
 #### 8. README
 
@@ -130,7 +130,7 @@ Chose (a) — simpler, avoids Schema wrapping gymnastics. The simple path valida
 
 #### 9. Changeset
 
-- `npx changeset` — major bump (breaking: Driver interface replaced)
+- Add changeset — major bump (breaking: Driver interface replaced)
 
 ### Open Questions
 

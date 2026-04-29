@@ -18,10 +18,11 @@ const CounterState = z.object({ count: z.bigint() })
 
 // 2. Define action schemas and a factory that returns handlers + state accessor
 const counterDriver = defineDriver(
-  { Increment: { amount: ITFBigInt } },
+  { init: {}, Increment: { amount: ITFBigInt } },
   () => {
     let count = 0n
     return {
+      init: () => {},
       Increment: ({ amount }) => {
         count += amount
       },

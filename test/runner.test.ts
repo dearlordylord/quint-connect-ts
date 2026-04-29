@@ -599,6 +599,51 @@ describe("replayTrace step 0 handling", () => {
       expect(dispatched).toEqual(["Init(A)", "Increment(5)"])
     }))
 
+  it.effect("errors on unmapped non-empty step 0 action", () =>
+    Effect.gen(function*() {
+      let stateChecks = 0
+
+      const trace: ItfTrace = {
+        vars: ["count", "mbt::actionTaken", "mbt::nondetPicks"],
+        states: [
+          {
+            "#meta": { index: 0 },
+            "mbt::actionTaken": "Init",
+            "mbt::nondetPicks": {},
+            count: { "#bigint": "0" }
+          }
+        ]
+      }
+      const emptyDriver: Driver<{ readonly count: bigint }> = { actions: {} }
+
+      const result = yield* replayTrace(
+        trace,
+        0,
+        emptyDriver,
+        defaultConfig,
+        stateCheck(
+          (raw) => Schema.decodeUnknown(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie),
+          () => {
+            stateChecks += 1
+            return true
+          }
+        ),
+        "test-seed"
+      ).pipe(
+        Effect.match({
+          onFailure: (e) => e,
+          onSuccess: () => undefined
+        })
+      )
+
+      expect(result).toBeInstanceOf(TraceReplayError)
+      if (result instanceof TraceReplayError) {
+        expect(result.message).toBe("Unknown action: Init")
+        expect(result.stepIndex).toBe(0)
+      }
+      expect(stateChecks).toBe(0)
+    }))
+
   it.effect("runs state comparison at step 0 when action is present", () =>
     Effect.gen(function*() {
       const comparedSteps: Array<number> = []

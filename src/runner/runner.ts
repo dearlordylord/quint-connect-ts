@@ -147,9 +147,6 @@ export const replayTrace = <S, E, R, Actions extends ActionMap<E, R>>(
 
       const actionDef = driver.actions[action]
       if (actionDef === undefined) {
-        // At step 0, action is "init" — skip if no handler defined (convenience so users
-        // don't need an explicit init handler when their constructor already sets up state).
-        if (stepIndex === 0) continue
         // Rust backend emits "step" when the spec's step action body is a direct no-op
         // (e.g. state' = state for a dead character). Skip since there's nothing to dispatch.
         if (action === "step") continue
