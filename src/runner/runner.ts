@@ -1,7 +1,7 @@
 import { Array as Arr, Effect } from "effect"
 import type { QuintError, QuintNotFoundError, RunOptions } from "../cli/quint.js"
 import { generateTraces } from "../cli/quint.js"
-import type { ActionMap, Config, Driver, StateComparator } from "../driver/types.js"
+import type { ActionMap, Config, Driver } from "../driver/types.js"
 import { defaultConfig } from "../driver/types.js"
 import type { ItfTrace } from "../itf/schema.js"
 import { buildPicksDecoders, extractReplayAction } from "./replay-actions.js"
@@ -11,13 +11,15 @@ import {
   jsonReplacer,
   NoTracesError,
   StateMismatchError,
-  stateMismatchError,
   TraceReplayError,
   traceReplayError
 } from "./replay-errors.js"
-import { normalizeTraceState, stripMetadata } from "./trace-state.js"
+import type { StateCheck } from "./state-check.js"
+import { checkReplayState } from "./state-check.js"
+import { stripMetadata } from "./trace-state.js"
 
 export { jsonReplacer, NoTracesError, StateMismatchError, stripMetadata, TraceReplayError }
+export type { StateCheck } from "./state-check.js"
 
 /** @internal */
 export const replayTrace = <S, E, R, Actions extends ActionMap<E, R>>(
@@ -49,26 +51,19 @@ export const replayTrace = <S, E, R, Actions extends ActionMap<E, R>>(
       if (dispatchResult === "skipped") continue
 
       if (stateCheck !== undefined) {
-        if (driver.getState === undefined) {
-          return yield* traceReplayError(
-            context,
-            "stateCheck is provided but driver.getState is not defined; getState is required when stateCheck is provided"
-          )
-        }
-        const specState = yield* stateCheck.deserializeState(normalizeTraceState(rawState, statePath))
-        const implState = yield* driver.getState()
-
-        if (!stateCheck.compareState(specState, implState)) {
-          return yield* stateMismatchError(context, seed, specState, implState)
-        }
+        yield* checkReplayState({
+          rawState,
+          statePath,
+          driver,
+          stateCheck,
+          traceIndex,
+          stepIndex,
+          action,
+          seed
+        })
       }
     }
   })
-
-export interface StateCheck<S> {
-  readonly compareState: StateComparator<S>
-  readonly deserializeState: (raw: unknown) => Effect.Effect<S>
-}
 
 export type QuintRunOptions<
   S,
