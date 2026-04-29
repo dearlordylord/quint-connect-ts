@@ -1,6 +1,6 @@
 {
   "name": "@firfi/quint-connect",
-  "version": "0.8.2",
+  "version": "1.0.0",
   "description": "Model-based testing framework connecting Quint specifications to TypeScript implementations",
   "type": "module",
   "main": "./dist/index.js",
