@@ -1,31 +1,17 @@
 import { Array as Arr, Effect, Predicate, Schema } from "effect"
 import type { QuintError, QuintNotFoundError, RunOptions } from "../cli/quint.js"
 import { generateTraces } from "../cli/quint.js"
-import type { AnyActionDef, Config, Driver, PartialActionMap, StateComparator } from "../driver/types.js"
+import type { AnyActionDef, Config, Driver, PartialActionMap } from "../driver/types.js"
 import { defaultConfig } from "../driver/types.js"
 import type { ItfTrace, MbtMeta } from "../itf/schema.js"
 import { ItfOption, MbtMeta as MbtMetaSchema } from "../itf/schema.js"
+import { NoTracesError, TraceReplayError } from "./errors.js"
+import type { StateCheck, StateMismatchError } from "./state-check.js"
+import { checkReplayState, resolveNestedValue } from "./state-check.js"
 
-export class StateMismatchError extends Schema.TaggedError<StateMismatchError>()("StateMismatchError", {
-  message: Schema.String,
-  traceIndex: Schema.Number,
-  stepIndex: Schema.Number,
-  expected: Schema.Unknown,
-  actual: Schema.Unknown,
-  showDiff: Schema.optionalWith(Schema.Boolean, { default: () => true })
-}) {}
-
-export class TraceReplayError extends Schema.TaggedError<TraceReplayError>()("TraceReplayError", {
-  message: Schema.String,
-  traceIndex: Schema.Number,
-  stepIndex: Schema.Number,
-  action: Schema.String,
-  cause: Schema.optional(Schema.Unknown)
-}) {}
-
-export class NoTracesError extends Schema.TaggedError<NoTracesError>()("NoTracesError", {
-  message: Schema.String
-}) {}
+export { NoTracesError, TraceReplayError } from "./errors.js"
+export type { StateCheck } from "./state-check.js"
+export { jsonReplacer, StateMismatchError, stripMetadata } from "./state-check.js"
 
 const extractMbtMeta = (
   state: { readonly [key: string]: unknown },
@@ -42,27 +28,6 @@ const extractMbtMeta = (
         action: "unknown"
       })
   )
-
-/** @internal */
-export const stripMetadata = (state: { readonly [key: string]: unknown }): { readonly [key: string]: unknown } =>
-  Object.fromEntries(Object.entries(state).filter(([k]) => k !== "#meta" && !k.startsWith("mbt::")))
-
-/** @internal */
-export const jsonReplacer = (_: string, v: unknown): unknown => typeof v === "bigint" ? `${v}n` : v
-
-const resolveNestedValue = (
-  obj: { readonly [key: string]: unknown },
-  path: ReadonlyArray<string>
-): unknown => {
-  let current: unknown = obj
-  for (const key of path) {
-    if (!Predicate.isRecord(current) || !(key in current)) {
-      return undefined
-    }
-    current = current[key]
-  }
-  return current
-}
 
 // Extract action + nondet picks from a sum type at a custom path
 // (Choreo-style specs where action is encoded as { tag: "ActionName", value: { picks... } })
@@ -98,14 +63,6 @@ const buildPicksDecoder = (picksShape: AnyActionDef["picks"]) => {
   )
   return Schema.decodeUnknown(Schema.Struct(wrappedFields))
 }
-
-const resolveRawState = (
-  rawState: { readonly [key: string]: unknown },
-  statePath: ReadonlyArray<string>
-): unknown =>
-  statePath.length > 0
-    ? resolveNestedValue(rawState, statePath)
-    : stripMetadata(rawState)
 
 /** @internal */
 export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
@@ -227,38 +184,19 @@ export const replayTrace = <S, E, R, Actions extends PartialActionMap<E, R>>(
       }
 
       if (stateCheck !== undefined) {
-        if (driver.getState === undefined) {
-          return yield* new TraceReplayError({
-            message:
-              "stateCheck is provided but driver.getState is not defined; getState is required when stateCheck is provided",
-            traceIndex,
-            stepIndex,
-            action
-          })
-        }
-        const specState = yield* stateCheck.deserializeState(resolveRawState(rawState, statePath))
-        const implState = yield* driver.getState()
-
-        if (!stateCheck.compareState(specState, implState)) {
-          return yield* new StateMismatchError({
-            message:
-              `State mismatch at trace ${traceIndex}, step ${stepIndex}, action "${action}" (seed: ${seed})\nExpected: ${
-                JSON.stringify(specState, jsonReplacer)
-              }\nActual: ${JSON.stringify(implState, jsonReplacer)}`,
-            traceIndex,
-            stepIndex,
-            expected: specState,
-            actual: implState
-          })
-        }
+        yield* checkReplayState({
+          rawState,
+          statePath,
+          driver,
+          stateCheck,
+          traceIndex,
+          stepIndex,
+          action,
+          seed
+        })
       }
     }
   })
-
-export interface StateCheck<S> {
-  readonly compareState: StateComparator<S>
-  readonly deserializeState: (raw: unknown) => Effect.Effect<S>
-}
 
 export type QuintRunOptions<
   S,
@@ -275,7 +213,8 @@ export type QuintRunOptions<
 
 /** Resolve the seed. Always generates a real seed so failures are reproducible. */
 const resolveSeed = (opts: RunOptions): string => {
-  return opts.seed ?? process.env["QUINT_SEED"] ?? `0x${Math.floor(Math.random() * 0xFFFFFFFF).toString(16).padStart(8, "0")}`
+  return opts.seed ?? process.env["QUINT_SEED"]
+    ?? `0x${Math.floor(Math.random() * 0xFFFFFFFF).toString(16).padStart(8, "0")}`
 }
 
 export const quintRun = <
