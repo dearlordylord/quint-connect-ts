@@ -5,10 +5,233 @@ import { expect } from "vitest"
 import { ITFBigInt } from "@firfi/itf-trace-parser/effect"
 
 import { defaultConfig } from "../src/driver/types.js"
-import type { Driver } from "../src/driver/types.js"
+import type { ActionMap, Driver } from "../src/driver/types.js"
 import { defineDriver, stateCheck } from "../src/effect.js"
 import type { ItfTrace } from "../src/itf/schema.js"
+import { extractReplayAction } from "../src/runner/replay-actions.js"
+import { dispatchReplayAction } from "../src/runner/replay-dispatch.js"
+import { actionContext, stateMismatchError } from "../src/runner/replay-errors.js"
 import { jsonReplacer, replayTrace, StateMismatchError, stripMetadata, TraceReplayError } from "../src/runner/runner.js"
+import { normalizeTraceState } from "../src/runner/trace-state.js"
+
+describe("trace-state normalization", () => {
+  it("strips metadata when no statePath is configured", () => {
+    const raw = {
+      "#meta": { index: 1 },
+      "mbt::actionTaken": "Increment",
+      "mbt::nondetPicks": {},
+      count: 3
+    }
+
+    expect(normalizeTraceState(raw, [])).toEqual({ count: 3 })
+  })
+
+  it("resolves statePath without stripping nested state", () => {
+    const raw = {
+      "#meta": { index: 1 },
+      "mbt::actionTaken": "Increment",
+      "mbt::nondetPicks": {},
+      "machine::state": {
+        count: 3,
+        "inner::qualified": true
+      }
+    }
+
+    expect(normalizeTraceState(raw, ["machine::state"])).toEqual({
+      count: 3,
+      "inner::qualified": true
+    })
+  })
+})
+
+describe("replay action extraction", () => {
+  it.effect("extracts action and nondet picks from MBT metadata", () =>
+    Effect.gen(function*() {
+      const action = yield* extractReplayAction(
+        {
+          "#meta": { index: 1 },
+          "mbt::actionTaken": "Increment",
+          "mbt::nondetPicks": {
+            amount: { tag: "Some", value: { "#bigint": "7" } }
+          },
+          count: { "#bigint": "7" }
+        },
+        [],
+        { traceIndex: 2, stepIndex: 1 }
+      )
+
+      expect(action.action).toBe("Increment")
+      expect(action.nondetPicks.get("amount")).toEqual({ tag: "Some", value: { "#bigint": "7" } })
+    }))
+
+  it.effect("extracts action and picks from a configured nondetPath sum type", () =>
+    Effect.gen(function*() {
+      const action = yield* extractReplayAction(
+        {
+          envelope: {
+            choice: {
+              tag: "Move",
+              value: {
+                from: "a",
+                to: "b"
+              }
+            }
+          }
+        },
+        ["envelope", "choice"],
+        { traceIndex: 2, stepIndex: 3 }
+      )
+
+      expect(action.action).toBe("Move")
+      expect(Object.fromEntries(action.nondetPicks)).toEqual({
+        from: { tag: "Some", value: "a" },
+        to: { tag: "Some", value: "b" }
+      })
+    }))
+
+  it.effect("adds replay context when nondetPath is not a sum type", () =>
+    Effect.gen(function*() {
+      const result = yield* extractReplayAction(
+        { envelope: { choice: { value: {} } } },
+        ["envelope", "choice"],
+        { traceIndex: 4, stepIndex: 5 }
+      ).pipe(
+        Effect.match({
+          onFailure: (e) => e,
+          onSuccess: () => undefined
+        })
+      )
+
+      expect(result).toBeInstanceOf(TraceReplayError)
+      if (result instanceof TraceReplayError) {
+        expect(result.traceIndex).toBe(4)
+        expect(result.stepIndex).toBe(5)
+        expect(result.action).toBe("unknown")
+        expect(result.message).toContain("Expected sum type {tag, value}")
+      }
+    }))
+})
+
+describe("replay dispatch helper", () => {
+  it.effect("decodes picks and dispatches an action handler", () =>
+    Effect.gen(function*() {
+      const dispatched: Array<bigint> = []
+      const factory = defineDriver(
+        { Increment: { amount: ITFBigInt } },
+        () => ({
+          Increment: ({ amount }) =>
+            Effect.sync(() => {
+              dispatched.push(amount)
+            })
+        })
+      )
+      const driver = yield* factory.create()
+
+      const result = yield* dispatchReplayAction(
+        driver.actions,
+        "Increment",
+        new Map([["amount", { tag: "Some", value: { "#bigint": "7" } }]]),
+        actionContext({ traceIndex: 0, stepIndex: 1 }, "Increment"),
+        undefined
+      )
+
+      expect(result).toBe("dispatched")
+      expect(dispatched).toEqual([7n])
+    }))
+
+  it.effect("dispatches raw nondetPath picks after extraction normalizes them", () =>
+    Effect.gen(function*() {
+      const dispatched: Array<string> = []
+      const factory = defineDriver(
+        { Move: { from: Schema.String } },
+        () => ({
+          Move: ({ from }) =>
+            Effect.sync(() => {
+              dispatched.push(from)
+            })
+        })
+      )
+      const driver = yield* factory.create()
+      const replayAction = yield* extractReplayAction(
+        {
+          choice: {
+            tag: "Move",
+            value: { from: "a" }
+          }
+        },
+        ["choice"],
+        { traceIndex: 0, stepIndex: 1 }
+      )
+
+      const result = yield* dispatchReplayAction(
+        driver.actions,
+        replayAction.action,
+        replayAction.nondetPicks,
+        actionContext({ traceIndex: 0, stepIndex: 1 }, replayAction.action),
+        undefined
+      )
+
+      expect(result).toBe("dispatched")
+      expect(dispatched).toEqual(["a"])
+    }))
+
+  it.effect("preserves documented no-op step missing-action skip", () =>
+    Effect.gen(function*() {
+      const emptyActions: ActionMap<never, never> = {}
+      const noOpResult = yield* dispatchReplayAction(
+        emptyActions,
+        "step",
+        new Map(),
+        actionContext({ traceIndex: 0, stepIndex: 3 }, "step"),
+        undefined
+      )
+
+      expect(noOpResult).toBe("skipped")
+    }))
+
+  it.effect("errors for missing non-empty action handler at step 0", () =>
+    Effect.gen(function*() {
+      const emptyActions: ActionMap<never, never> = {}
+
+      const result = yield* dispatchReplayAction(
+        emptyActions,
+        "Init",
+        new Map(),
+        actionContext({ traceIndex: 0, stepIndex: 0 }, "Init"),
+        undefined
+      ).pipe(
+        Effect.match({
+          onFailure: (e) => e,
+          onSuccess: () => undefined
+        })
+      )
+
+      expect(result).toBeInstanceOf(TraceReplayError)
+      if (result instanceof TraceReplayError) {
+        expect(result.message).toBe("Unknown action: Init")
+        expect(result.traceIndex).toBe(0)
+        expect(result.stepIndex).toBe(0)
+        expect(result.action).toBe("Init")
+      }
+    }))
+})
+
+describe("replay error context helpers", () => {
+  it("builds state mismatch messages with action context and bigint-safe JSON", () => {
+    const error = stateMismatchError(
+      actionContext({ traceIndex: 3, stepIndex: 4 }, "Move"),
+      "seed-123",
+      { count: 1n },
+      { count: 2n }
+    )
+
+    expect(error).toBeInstanceOf(StateMismatchError)
+    expect(error.message).toContain("trace 3, step 4, action \"Move\"")
+    expect(error.message).toContain("seed-123")
+    expect(error.message).toContain("1n")
+    expect(error.message).toContain("2n")
+  })
+})
 
 // ---------------------------------------------------------------------------
 // T1a: stripMetadata
@@ -357,7 +580,7 @@ describe("replayTrace unknown action error messages (T1b)", () => {
     ]
   })
 
-  const emptyDriver: Driver<unknown> = {
+  const emptyDriver: Driver<unknown, never, never, ActionMap<never, never>> = {
     actions: {}
   }
 
@@ -614,7 +837,7 @@ describe("replayTrace step 0 handling", () => {
           }
         ]
       }
-      const emptyDriver: Driver<{ readonly count: bigint }> = { actions: {} }
+      const emptyDriver: Driver<{ readonly count: bigint }, never, never, ActionMap<never, never>> = { actions: {} }
 
       const result = yield* replayTrace(
         trace,
