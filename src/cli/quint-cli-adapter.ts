@@ -19,6 +19,27 @@ interface QuintCliAdapterDeps {
   ) => Effect.Effect<QuintProcessResult, QuintNotFoundError>
 }
 
+// eslint-disable-next-line functional/no-mixed-types -- process handles mix data fields and event methods.
+interface QuintProcess {
+  readonly pid: number | undefined
+  readonly stdout: {
+    readonly resume: () => void
+  }
+  readonly stderr: {
+    readonly on: (event: "data", listener: (chunk: Buffer) => void) => unknown
+  }
+  readonly on: {
+    (event: "close", listener: (code: number | null) => void): unknown
+    (event: "error", listener: (e: Error) => void): unknown
+  }
+}
+
+type SpawnQuintProcess = (
+  cmd: string,
+  args: ReadonlyArray<string>,
+  options: { readonly env: NodeJS.ProcessEnv; readonly detached: true }
+) => QuintProcess
+
 export const buildRunArgs = (
   opts: RunOptions,
   outDir: string
@@ -69,24 +90,41 @@ export const buildRunArgs = (
   return args
 }
 
-const runQuintProcess = (
+export const makeRunQuintProcess = (
+  spawnProcess: SpawnQuintProcess = (cmd, cmdArgs, options) => {
+    const proc = spawn(cmd, [...cmdArgs], options)
+    return {
+      pid: proc.pid,
+      stdout: proc.stdout,
+      stderr: proc.stderr,
+      on: proc.on.bind(proc)
+    }
+  }
+) =>
+(
   args: ReadonlyArray<string>,
   verbose: boolean
 ): Effect.Effect<QuintProcessResult, QuintNotFoundError> =>
   Effect.async<QuintProcessResult, QuintNotFoundError>((resume) => {
     const env = verbose ? { ...process.env, QUINT_VERBOSE: "true" } : process.env
     const startProc = (cmd: string, cmdArgs: ReadonlyArray<string>) => {
-      const proc = spawn(cmd, cmdArgs, { env, detached: true })
+      const proc = spawnProcess(cmd, cmdArgs, { env, detached: true })
       let stderr = ""
       proc.stdout.resume()
       proc.stderr.on("data", (chunk: Buffer) => {
         stderr += chunk.toString()
       })
       proc.on("close", (code) => {
+        if (proc !== activeProc) {
+          return
+        }
         process.removeListener("exit", killGroup)
         resume(Effect.succeed({ exitCode: code ?? 1, stderr }))
       })
       proc.on("error", (e) => {
+        if (proc !== activeProc) {
+          return
+        }
         if ((e as NodeJS.ErrnoException).code === "ENOENT" && cmd === "quint") {
           console.warn(
             "[quint-connect] 'quint' not found on PATH, falling back to npx (slower). Install globally: npm i -g @informalsystems/quint"
@@ -106,7 +144,10 @@ const runQuintProcess = (
 
     killGroup = () => {
       try {
-        process.kill(-activeProc.pid!, "SIGKILL")
+        const pid = activeProc.pid
+        if (pid !== undefined) {
+          process.kill(-pid, "SIGKILL")
+        }
       } catch {
         // already dead
       }
@@ -118,6 +159,8 @@ const runQuintProcess = (
       killGroup()
     })
   })
+
+const runQuintProcess = makeRunQuintProcess()
 
 export const makeQuintCliTraceAdapter = (
   deps: QuintCliAdapterDeps = { runQuintProcess }

@@ -1,4 +1,5 @@
 import { Effect } from "effect"
+import { EventEmitter } from "node:events"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -9,7 +10,7 @@ import {
   normalizeEvaluatorOutput,
   patchCompiledEvaluatorInput
 } from "../src/cli/compiled-evaluator-adapter.js"
-import { buildRunArgs, makeQuintCliTraceAdapter } from "../src/cli/quint-cli-adapter.js"
+import { buildRunArgs, makeQuintCliTraceAdapter, makeRunQuintProcess } from "../src/cli/quint-cli-adapter.js"
 import { readTraceFiles, writeTraceFiles } from "../src/cli/trace-files.js"
 
 const withTempDir = async <A>(run: (dir: string) => Promise<A>): Promise<A> => {
@@ -18,6 +19,15 @@ const withTempDir = async <A>(run: (dir: string) => Promise<A>): Promise<A> => {
     return await run(dir)
   } finally {
     await rm(dir, { recursive: true, force: true })
+  }
+}
+
+class FakeProcess extends EventEmitter {
+  readonly stdout = { resume: vi.fn() }
+  readonly stderr = new EventEmitter()
+
+  constructor(readonly pid: number) {
+    super()
   }
 }
 
@@ -100,13 +110,44 @@ describe("Quint CLI trace adapter", () => {
       expect(traces[0]?.states[0]).toEqual({ counter: { "#bigint": "1" } })
     })
   })
+
+  it("ignores the original quint close after ENOENT fallback starts npx", async () => {
+    const spawned: Array<{ readonly cmd: string; readonly args: ReadonlyArray<string>; readonly proc: FakeProcess }> =
+      []
+    const spawnProcess = vi.fn((cmd: string, args: ReadonlyArray<string>) => {
+      const proc = new FakeProcess(1000 + spawned.length)
+      spawned.push({ cmd, args, proc })
+      return proc
+    })
+    const runQuintProcess = makeRunQuintProcess(spawnProcess)
+    const resultPromise = Effect.runPromise(runQuintProcess(["run", "counter.qnt"], false))
+
+    const quintProc = spawned.at(0)?.proc
+    if (quintProc === undefined) {
+      throw new Error("expected quint process")
+    }
+    const enoent = Object.assign(new Error("quint not found"), { code: "ENOENT" })
+    quintProc.emit("error", enoent)
+    const fallbackProc = spawned.at(1)?.proc
+    if (fallbackProc === undefined) {
+      throw new Error("expected npx fallback process")
+    }
+
+    expect(spawned[1]?.cmd).toBe("npx")
+    expect(spawned[1]?.args).toEqual(["@informalsystems/quint", "run", "counter.qnt"])
+
+    quintProc.emit("close", 1)
+    fallbackProc.emit("close", 0)
+
+    await expect(resultPromise).resolves.toEqual({ exitCode: 0, stderr: "" })
+  })
 })
 
 describe("compiled evaluator trace adapter", () => {
   it("patches evaluator runtime parameters and seed", () => {
     const result = patchCompiledEvaluatorInput(
       "{\"nruns\":1,\"nsteps\":1,\"ntraces\":1,\"nthreads\":1,\"seed\":null}",
-      { spec: "counter.qnt", maxSamples: 7, maxSteps: 5, nTraces: 2, seed: "0f" },
+      { spec: "counter.qnt", maxSamples: 7, maxSteps: 5, nTraces: 2, seed: "0x0f" },
       4,
       "000000000000000a"
     )
@@ -115,6 +156,29 @@ describe("compiled evaluator trace adapter", () => {
       input: "{\"nruns\":7,\"nsteps\":5,\"ntraces\":2,\"nthreads\":4,\"seed\":15}",
       seedHex: "0xf"
     })
+  })
+
+  it("patches decimal seeds as decimal and prefixed hex seeds as hex", () => {
+    const rawInput = "{\"nruns\":1,\"nsteps\":1,\"ntraces\":1,\"nthreads\":1,\"seed\":null}"
+    const decimal = patchCompiledEvaluatorInput(rawInput, { spec: "counter.qnt", seed: "42" }, 4, "a")
+    const hex = patchCompiledEvaluatorInput(rawInput, { spec: "counter.qnt", seed: "0x42" }, 4, "a")
+
+    expect(decimal.input).toBe("{\"nruns\":10000,\"nsteps\":10,\"ntraces\":10,\"nthreads\":4,\"seed\":42}")
+    expect(decimal.seedHex).toBe("0x2a")
+    expect(hex.input).toBe("{\"nruns\":10000,\"nsteps\":10,\"ntraces\":10,\"nthreads\":4,\"seed\":66}")
+    expect(hex.seedHex).toBe("0x42")
+  })
+
+  it("injects a seed when compiled input has no seed field", () => {
+    const result = patchCompiledEvaluatorInput(
+      "{\"nruns\":1,\"nsteps\":1,\"ntraces\":1,\"nthreads\":1}",
+      { spec: "counter.qnt" },
+      4,
+      "000000000000000a"
+    )
+
+    expect(result.input).toBe("{\"nruns\":10000,\"nsteps\":10,\"ntraces\":10,\"nthreads\":4,\"seed\":10}")
+    expect(result.seedHex).toBe("0xa")
   })
 
   it("normalizes evaluator stdout to Quint out-itf trace shape", async () => {
@@ -127,6 +191,17 @@ progress
       "#meta": { format: "ITF" },
       vars: ["counter"],
       states: [{ counter: 3n }]
+    }])
+  })
+
+  it("normalizes large evaluator integers without precision loss", async () => {
+    const traces = await Effect.runPromise(normalizeEvaluatorOutput(`
+{"status":"ok","bestTraces":[{"states":{"vars":["counter"],"states":[{"counter":9007199254740993}]}}]}
+`))
+
+    expect(traces).toEqual([{
+      vars: ["counter"],
+      states: [{ counter: 9007199254740993n }]
     }])
   })
 

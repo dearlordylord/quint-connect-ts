@@ -15,6 +15,7 @@ import { readTraceFiles, writeTraceFiles } from "./trace-files.js"
 const RANDOM_SEED_HEX_LENGTH = 16
 const HEX_RADIX = 16
 const MIN_EVALUATOR_THREADS = 2
+const JSON_BIGINT_SENTINEL = "#quintConnectBigInt"
 
 interface EvaluatorResult {
   readonly stdout: string
@@ -50,6 +51,78 @@ const defaultRandomSeedHex = (): string =>
     { length: RANDOM_SEED_HEX_LENGTH },
     () => Math.floor(Math.random() * HEX_RADIX).toString(HEX_RADIX)
   ).join("")
+
+const parseSeed: (seed: string) => bigint = BigInt
+
+const isJsonDigit = (char: string): boolean => char >= "0" && char <= "9"
+
+const wrapJsonIntegerLiterals = (json: string): string => {
+  let result = ""
+  let index = 0
+  let inString = false
+  let escaped = false
+
+  while (index < json.length) {
+    const char = json[index]
+
+    if (inString) {
+      result += char
+      if (escaped) {
+        escaped = false
+      } else if (char === "\\") {
+        escaped = true
+      } else if (char === "\"") {
+        inString = false
+      }
+      index += 1
+      continue
+    }
+
+    if (char === "\"") {
+      inString = true
+      result += char
+      index += 1
+      continue
+    }
+
+    if (char === "-" || isJsonDigit(char)) {
+      const start = index
+      let cursor = char === "-" ? index + 1 : index
+      while (cursor < json.length && isJsonDigit(json[cursor])) {
+        cursor += 1
+      }
+      const isInteger = cursor > start && json[cursor] !== "." && json[cursor] !== "e" && json[cursor] !== "E"
+      if (!isInteger) {
+        while (
+          cursor < json.length
+          && ![",", "]", "}", " ", "\n", "\r", "\t"].includes(json[cursor])
+        ) {
+          cursor += 1
+        }
+      }
+      const token = json.slice(start, cursor)
+      result += isInteger ? `{"${JSON_BIGINT_SENTINEL}":"${token}"}` : token
+      index = cursor
+      continue
+    }
+
+    result += char
+    index += 1
+  }
+
+  return result
+}
+
+const unwrapJsonBigIntSentinel = (_key: string, value: unknown): unknown => {
+  if (
+    isRecord(value)
+    && Object.keys(value).length === 1
+    && typeof value[JSON_BIGINT_SENTINEL] === "string"
+  ) {
+    return BigInt(value[JSON_BIGINT_SENTINEL])
+  }
+  return value
+}
 
 const getRustEvaluatorPath = (): string => {
   const quintDir = join(homedir(), ".quint")
@@ -146,9 +219,7 @@ export const patchCompiledEvaluatorInput = (
     .replace(/"ntraces":\s*\d+/, `"ntraces":${nTraces}`)
     .replace(/"nthreads":\s*\d+/, `"nthreads":${nThreads}`)
 
-  const seedBigint = opts.seed !== undefined
-    ? (opts.seed.startsWith("0x") ? BigInt(opts.seed) : BigInt(`0x${opts.seed}`))
-    : BigInt(`0x${randomSeedHex}`)
+  const seedBigint = opts.seed !== undefined ? parseSeed(opts.seed) : BigInt(`0x${randomSeedHex}`)
   const seedHex = `0x${seedBigint.toString(HEX_RADIX)}`
   const seedReplaced = patchedInput.replace(/"seed":\s*(?:null|undefined|\d+)/, `"seed":${seedBigint}`)
   patchedInput = seedReplaced === patchedInput
@@ -168,11 +239,8 @@ export const normalizeEvaluatorOutput = (
     }
 
     const parsed: unknown = yield* Effect.try({
-      try: () =>
-        JSON.parse(jsonLine, (_key, value: unknown) =>
-          typeof value === "number" && Number.isInteger(value) ? BigInt(value) : value),
-      catch: (e) =>
-        new QuintError({ message: `Failed to parse evaluator output: ${e}` })
+      try: () => JSON.parse(wrapJsonIntegerLiterals(jsonLine), unwrapJsonBigIntSentinel),
+      catch: (e) => new QuintError({ message: `Failed to parse evaluator output: ${e}` })
     })
 
     if (isRecord(parsed) && parsed["status"] === "error") {
