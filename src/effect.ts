@@ -10,7 +10,6 @@ export type {
   Config,
   Driver,
   DriverFactory,
-  PartialActionMap,
   StateComparator
 } from "./driver/types.js"
 export { defaultConfig } from "./driver/types.js"

@@ -5,7 +5,7 @@ import { expect } from "vitest"
 import { ITFBigInt } from "@firfi/itf-trace-parser/effect"
 
 import { defaultConfig } from "../src/driver/types.js"
-import type { Driver, PartialActionMap } from "../src/driver/types.js"
+import type { Driver } from "../src/driver/types.js"
 import { defineDriver, stateCheck } from "../src/effect.js"
 import type { ItfTrace } from "../src/itf/schema.js"
 import { jsonReplacer, replayTrace, StateMismatchError, stripMetadata, TraceReplayError } from "../src/runner/runner.js"
@@ -357,7 +357,7 @@ describe("replayTrace unknown action error messages (T1b)", () => {
     ]
   })
 
-  const emptyDriver: Driver<unknown, never, never, PartialActionMap> = {
+  const emptyDriver: Driver<unknown> = {
     actions: {}
   }
 
