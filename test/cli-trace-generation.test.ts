@@ -78,9 +78,9 @@ describe("Quint CLI trace adapter", () => {
       "3",
       "--max-samples",
       "10000",
-      "--invariant",
+      "--invariants",
       "Inv",
-      "--witness",
+      "--witnesses",
       "Witness"
     ])
   })
