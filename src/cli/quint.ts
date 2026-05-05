@@ -73,15 +73,11 @@ const buildRunArgs = (
   if (opts.main !== undefined) {
     args.push("--main", opts.main)
   }
-  if (opts.invariants !== undefined) {
-    for (const inv of opts.invariants) {
-      args.push("--invariant", inv)
-    }
+  if (opts.invariants !== undefined && opts.invariants.length > 0) {
+    args.push("--invariants", ...opts.invariants)
   }
-  if (opts.witnesses !== undefined) {
-    for (const wit of opts.witnesses) {
-      args.push("--witness", wit)
-    }
+  if (opts.witnesses !== undefined && opts.witnesses.length > 0) {
+    args.push("--witnesses", ...opts.witnesses)
   }
   return args
 }

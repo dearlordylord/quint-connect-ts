@@ -1,5 +1,13 @@
 # @firfi/quint-connect
 
+## 1.0.0-effect4.5
+
+### Major Changes
+
+- Update `RunOptions.invariants` and `RunOptions.witnesses` to use the Quint CLI `--invariants` and `--witnesses` flags introduced for the Rust backend in Quint v0.31.0.
+
+  This is a breaking runtime compatibility change for users running older Quint CLI versions that only support `--invariant` and `--witness`.
+
 ## 1.0.0-effect4.4
 
 ### Minor Changes

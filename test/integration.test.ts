@@ -1,5 +1,7 @@
 import { describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
+import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import * as path from "node:path"
 import { expect } from "vitest"
 
@@ -13,6 +15,7 @@ import { defineDriver, stateCheck } from "../src/effect.js"
 import { quintRun, TraceReplayError } from "../src/runner/runner.js"
 import {
   defineDriver as defineDriverSimple,
+  NoTracesError,
   pickFrom,
   run,
   stateCheck as simpleStateCheck,
@@ -459,6 +462,64 @@ describe("Integration: QuintError includes stderr", () => {
         expect(result.message.length).toBeGreaterThan("quint run failed with exit code 1".length)
       }
     }), { timeout: 30000 })
+})
+
+describe("Integration: Quint CLI args", () => {
+  it("passes invariants and witnesses using Quint v0.31 plural flags", { timeout: 30000 }, async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "quint-connect-cli-args-"))
+    const binDir = path.join(tempDir, "bin")
+    const argsPath = path.join(tempDir, "args.json")
+    await mkdir(binDir)
+    const fakeNpx = path.join(binDir, "npx")
+    await writeFile(
+      fakeNpx,
+      `#!/usr/bin/env node
+import { writeFileSync } from "node:fs"
+writeFileSync(process.env["QUINT_ARGS_FILE"], JSON.stringify(process.argv.slice(2), null, 2))
+process.exit(0)
+`
+    )
+    await chmod(fakeNpx, 0o755)
+
+    const originalPath = process.env["PATH"]
+    const originalArgsFile = process.env["QUINT_ARGS_FILE"]
+    process.env["PATH"] = `${binDir}${path.delimiter}${originalPath ?? ""}`
+    process.env["QUINT_ARGS_FILE"] = argsPath
+
+    try {
+      await run({
+        spec: path.join(specDir, "counter.qnt"),
+        nTraces: 1,
+        seed: "1",
+        invariants: ["InvA", "InvB"],
+        witnesses: ["WitnessA", "WitnessB"],
+        driver: defineDriverSimple(() => ({
+          step: () => {}
+        }))
+      })
+      expect.unreachable("fake quint produces no traces")
+    } catch (e: unknown) {
+      expect(e).toBeInstanceOf(NoTracesError)
+    } finally {
+      if (originalPath === undefined) {
+        delete process.env["PATH"]
+      } else {
+        process.env["PATH"] = originalPath
+      }
+      if (originalArgsFile === undefined) {
+        delete process.env["QUINT_ARGS_FILE"]
+      } else {
+        process.env["QUINT_ARGS_FILE"] = originalArgsFile
+      }
+    }
+
+    const args = JSON.parse(await readFile(argsPath, "utf8")) as Array<string>
+    expect(args).toContain("--invariants")
+    expect(args).toContain("--witnesses")
+    expect(args).not.toContain("--invariant")
+    expect(args).not.toContain("--witness")
+    expect(args).toEqual(expect.arrayContaining(["InvA", "InvB", "WitnessA", "WitnessB"]))
+  })
 })
 
 describe("Simple API: error unwrapping", () => {

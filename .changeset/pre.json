@@ -7,6 +7,7 @@
   "changesets": [
     "brave-jars-guess",
     "effect4-migration",
+    "effect4-quint-run-flags",
     "remove-platform-deps"
   ]
 }
