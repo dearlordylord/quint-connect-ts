@@ -6,8 +6,8 @@
   },
   "changesets": [
     "brave-jars-guess",
+    "calm-rocks-listen",
     "effect4-migration",
-    "effect4-quint-run-flags",
     "remove-platform-deps"
   ]
 }

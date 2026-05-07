@@ -499,6 +499,18 @@ describe("jsonReplacer", () => {
     const result = JSON.stringify(obj, jsonReplacer)
     expect(result).toBe("{\"count\":\"5n\",\"name\":\"test\"}")
   })
+
+  it("works with JSON.stringify for objects containing maps", () => {
+    const obj = { picks: new Map<string, unknown>([["amount", 5n], ["tag", "Some"]]) }
+    const result = JSON.stringify(obj, jsonReplacer)
+    expect(result).toBe("{\"picks\":{\"amount\":\"5n\",\"tag\":\"Some\"}}")
+  })
+
+  it("works with JSON.stringify for objects containing sets", () => {
+    const obj = { enabled: new Set(["a", "b"]) }
+    const result = JSON.stringify(obj, jsonReplacer)
+    expect(result).toBe("{\"enabled\":[\"a\",\"b\"]}")
+  })
 })
 
 // ---------------------------------------------------------------------------

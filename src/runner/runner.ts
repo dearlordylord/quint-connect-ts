@@ -48,7 +48,16 @@ export const stripMetadata = (state: { readonly [key: string]: unknown }): { rea
   Object.fromEntries(Object.entries(state).filter(([k]) => k !== "#meta" && !k.startsWith("mbt::")))
 
 /** @internal */
-export const jsonReplacer = (_: string, v: unknown): unknown => typeof v === "bigint" ? `${v}n` : v
+export const jsonReplacer = (_: string, v: unknown): unknown => {
+  if (typeof v === "bigint") return `${v}n`
+  if (v instanceof Map) {
+    const obj: Record<string, unknown> = {}
+    for (const [k, val] of v) obj[String(k)] = val
+    return obj
+  }
+  if (v instanceof Set) return [...v]
+  return v
+}
 
 const resolveNestedValue = (
   obj: { readonly [key: string]: unknown },
