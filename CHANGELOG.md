@@ -1,5 +1,11 @@
 # @firfi/quint-connect
 
+## 2.0.1
+
+### Patch Changes
+
+- Improve trace replay error serialization for `Map` and `Set` values in state mismatch diagnostics.
+
 ## 2.0.0
 
 ### Major Changes
