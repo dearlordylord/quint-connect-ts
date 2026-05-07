@@ -64,7 +64,16 @@ export const withTraceReplayError = <A, E, R>(
   )
 
 /** @internal */
-export const jsonReplacer = (_: string, v: unknown): unknown => typeof v === "bigint" ? `${v}n` : v
+export const jsonReplacer = (_: string, v: unknown): unknown => {
+  if (typeof v === "bigint") return `${v}n`
+  if (v instanceof Map) {
+    const obj: Record<string, unknown> = {}
+    for (const [k, val] of v) obj[String(k)] = val
+    return obj
+  }
+  if (v instanceof Set) return [...v]
+  return v
+}
 
 export const stateMismatchError = (
   context: ReplayActionContext,
