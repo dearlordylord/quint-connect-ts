@@ -13,9 +13,11 @@ The publish checks are split by the boundary they protect. This keeps ordinary f
 - validates exports and the CLI bin against the files actually present in that tarball;
 - installs the tarball with pnpm's prefer-offline mode in a fresh temporary project;
 - imports the default, Effect, Vitest, and Vitest Simple entrypoints without Zod installed;
-- runs one real trace through the explicit local `quintBin` with Effect `4.0.0-beta.99`;
+- verifies the installed manifest has the expected package version and exact parser dependency;
+- runs a huge integer through one real trace and state check via the explicit local `quintBin` and Effect `4.0.0-beta.99`;
 - executes the packed `intent` bin and verifies its expected missing-optional-tool diagnostic;
-- installs Zod only after the Effect-only check and imports the Zod entrypoint; and
+- installs Zod only after the Effect-only check, then runs the default/simple API through a real Zod-decoded trace;
+- strictly typechecks representative public simple and Effect API consumers against the installed tarball; and
 - removes the temporary project and tarball even when a check fails.
 
 The packed test deliberately avoids registry publication, `npx`, network fallback for Quint, temporary Changesets versioning, and `npm publish --dry-run`. Those operations either mutate release state or duplicate the package contents already validated from the tarball.

@@ -81,7 +81,10 @@ try {
     join(repoRoot, "test/fixtures/packed-consumer.mjs"),
     join(smokeRoot, "packed-consumer.mjs")
   )
-  await copyFile(join(repoRoot, "test/specs/counter.qnt"), join(smokeRoot, "counter.qnt"))
+  await copyFile(
+    join(repoRoot, "test/fixtures/packed-consumer.qnt"),
+    join(smokeRoot, "packed consumer spec.qnt")
+  )
 
   const packageDependency = `file:${tarball}`
   await installConsumer(smokeRoot, {
@@ -91,12 +94,15 @@ try {
 
   const quintBin = join(repoRoot, "node_modules", ".bin", "quint")
   await access(quintBin)
+  const consumerEnv = {
+    PACKED_CONSUMER_PACKAGE_VERSION: packageManifest.version,
+    PACKED_CONSUMER_PARSER_VERSION: packageManifest.dependencies["@firfi/itf-trace-parser"],
+    PACKED_CONSUMER_QUINT_BIN: quintBin,
+    PACKED_CONSUMER_SPEC: join(smokeRoot, "packed consumer spec.qnt")
+  }
   run(runtimeCommand, [join(smokeRoot, "packed-consumer.mjs")], {
     cwd: smokeRoot,
-    env: {
-      PACKED_CONSUMER_QUINT_BIN: quintBin,
-      PACKED_CONSUMER_SPEC: join(smokeRoot, "counter.qnt")
-    }
+    env: consumerEnv
   })
 
   const binResult = spawnSync(join(smokeRoot, "node_modules", ".bin", "intent"), [], {
@@ -112,10 +118,33 @@ try {
   )
   await installConsumer(smokeRoot, {
     "@firfi/quint-connect": packageDependency,
+    "@types/node": packageManifest.devDependencies["@types/node"],
     effect: packageManifest.dependencies.effect,
+    typescript: packageManifest.devDependencies.typescript,
     zod: packageManifest.devDependencies.zod
   })
-  run(runtimeCommand, [join(smokeRoot, "packed-consumer-zod.mjs")], { cwd: smokeRoot })
+  run(runtimeCommand, [join(smokeRoot, "packed-consumer-zod.mjs")], {
+    cwd: smokeRoot,
+    env: consumerEnv
+  })
+
+  await copyFile(
+    join(repoRoot, "test/fixtures/packed-consumer-types.ts"),
+    join(smokeRoot, "packed-consumer-types.ts")
+  )
+  const tscBin = join(smokeRoot, "node_modules", ".bin", "tsc")
+  await access(tscBin)
+  run(tscBin, [
+    "--noEmit",
+    "--strict",
+    "--target", "ES2023",
+    "--lib", "ES2023,ESNext.Disposable,DOM,DOM.Iterable",
+    "--module", "NodeNext",
+    "--moduleResolution", "NodeNext",
+    "--skipLibCheck", "false",
+    "--verbatimModuleSyntax", "true",
+    join(smokeRoot, "packed-consumer-types.ts")
+  ], { cwd: smokeRoot })
 } catch (error) {
   failure = error
 } finally {
