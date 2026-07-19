@@ -85,6 +85,10 @@ const parseWindowsProcessCount = (stdout: string): number => {
 
 // eslint-disable-next-line functional/no-mixed-types -- the boundary exposes platform decisions and operations together.
 export interface PlatformProcessBoundary {
+  /**
+   * Rust parity: upstream invokes `quint.cmd` on Windows and `quint` elsewhere.
+   * https://github.com/informalsystems/quint-connect/blob/4f018f54fc7dd4cef341d10111427bab59d3b307/connect/src/trace/generator/utils.rs#L3-L9
+   */
   readonly commandName: (name: string) => string
   readonly executableName: (name: string) => string
   readonly detached: boolean
@@ -137,6 +141,10 @@ export const makePlatformProcessBoundary = (
   }
 
   const makeLifecycle = (getActiveProcess: () => ProcessHandle) => {
+    // Node/Effect-only lifecycle: upstream Rust waits synchronously for `output()` and
+    // therefore has no asynchronous child tree to supervise. Here the scoped finalizer,
+    // host-exit hooks, and signal hooks all converge on idempotent tree termination.
+    // https://github.com/informalsystems/quint-connect/blob/4f018f54fc7dd4cef341d10111427bab59d3b307/connect/src/trace/generator/mod.rs#L23-L33
     const terminateOnExit = () => {
       const activeProcess = getActiveProcess()
       if (!isWindows || activeProcess.pid === undefined) {

@@ -76,6 +76,10 @@ export const makeRunQuintProcess = (
         new QuintNotFoundError({ message: `Invalid Quint executable configuration: ${error}` })
       )
     )
+    // Intentional extension over Rust: upstream selects only `quint.cmd`/`quint`.
+    // TypeScript additionally supports an injected executable, QUINT_BIN, and an npx
+    // fallback because JS consumers commonly pin tools through different package runners.
+    // https://github.com/informalsystems/quint-connect/blob/4f018f54fc7dd4cef341d10111427bab59d3b307/connect/src/trace/generator/utils.rs#L3-L9
     const defaultQuintCommand = processBoundary.commandName("quint")
     const runAttempt = (cmd: string, cmdArgs: ReadonlyArray<string>) =>
       runManagedProcess({
