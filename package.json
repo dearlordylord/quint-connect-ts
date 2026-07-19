@@ -3,6 +3,9 @@
   "version": "2.0.1",
   "description": "Model-based testing framework connecting Quint specifications to TypeScript implementations",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -94,6 +97,7 @@
   "dependencies": {
     "@firfi/itf-trace-parser": "0.1.2",
     "@standard-schema/spec": "^1.1.0",
+    "cross-spawn": "^7.0.6",
     "effect": "^3.19.15"
   },
   "lint-staged": {
@@ -112,6 +116,7 @@
     "@effect/vitest": "latest",
     "@eslint/compat": "^2.0.2",
     "@tanstack/intent": "^0.0.14",
+    "@types/cross-spawn": "^6.0.6",
     "@types/node": "^25.1.0",
     "@typescript-eslint/parser": "^8.54.0",
     "eslint": "^9.39.2",

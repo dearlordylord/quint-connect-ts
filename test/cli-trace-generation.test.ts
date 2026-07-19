@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Fiber } from "effect"
 import { EventEmitter } from "node:events"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -6,7 +6,9 @@ import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 
 import {
+  decodeCompiledEvaluatorInput,
   makeCompiledEvaluatorTraceAdapter,
+  makeRunEvaluatorProcess,
   normalizeEvaluatorOutput,
   patchCompiledEvaluatorInput
 } from "../src/cli/compiled-evaluator-adapter.js"
@@ -31,6 +33,18 @@ class FakeProcess extends EventEmitter {
   }
 }
 
+class FakeEvaluatorProcess extends EventEmitter {
+  readonly stdin = { write: vi.fn(), end: vi.fn() }
+  readonly stdout = new EventEmitter()
+  readonly stderr = new EventEmitter()
+
+  constructor(readonly pid: number) {
+    super()
+  }
+}
+
+const compiledInput = (source: string) => Effect.runSync(decodeCompiledEvaluatorInput(source))
+
 describe("trace file helpers", () => {
   it("writes normalized traces and reads them through the shared parser", async () => {
     await withTempDir(async (dir) => {
@@ -48,6 +62,18 @@ describe("trace file helpers", () => {
       const traces = await Effect.runPromise(readTraceFiles(dir))
       expect(traces).toHaveLength(1)
       expect(traces[0]?.states[0]).toEqual({ counter: { "#bigint": "2" } })
+    })
+  })
+
+  it("validates the complete trace batch before writing any file", async () => {
+    await withTempDir(async (dir) => {
+      const result = Effect.runPromise(writeTraceFiles(dir, [
+        { vars: ["counter"], states: [{ counter: 1n }] },
+        { vars: "invalid", states: [] }
+      ]))
+
+      await expect(result).rejects.toThrow("Failed to validate ITF trace for writing")
+      await expect(readFile(join(dir, "trace_0.itf.json"), "utf-8")).rejects.toMatchObject({ code: "ENOENT" })
     })
   })
 })
@@ -128,6 +154,7 @@ describe("Quint CLI trace adapter", () => {
     }
     const enoent = Object.assign(new Error("quint not found"), { code: "ENOENT" })
     quintProc.emit("error", enoent)
+    await vi.waitFor(() => expect(spawned).toHaveLength(2))
     const fallbackProc = spawned.at(1)?.proc
     if (fallbackProc === undefined) {
       throw new Error("expected npx fallback process")
@@ -144,9 +171,35 @@ describe("Quint CLI trace adapter", () => {
 })
 
 describe("compiled evaluator trace adapter", () => {
+  it("rejects malformed compiled evaluator JSON at the boundary", async () => {
+    await expect(Effect.runPromise(decodeCompiledEvaluatorInput("{\"nruns\":1"))).rejects.toThrow(
+      "Invalid compiled evaluator input"
+    )
+  })
+
+  it("runs the evaluator through the interruptible process boundary", async () => {
+    const proc = new FakeEvaluatorProcess(4242)
+    const spawnProcess = vi.fn(() => proc)
+    const kill = vi.spyOn(process, "kill").mockReturnValue(true)
+
+    try {
+      const fiber = Effect.runFork(makeRunEvaluatorProcess(spawnProcess)("/fake/evaluator", "{}"))
+      await Effect.runPromise(Fiber.interrupt(fiber))
+
+      expect(spawnProcess).toHaveBeenCalledWith(
+        "/fake/evaluator",
+        ["simulate-from-stdin"],
+        { stdio: ["pipe", "pipe", "pipe"], detached: true }
+      )
+      expect(kill).toHaveBeenCalledWith(-4242, "SIGKILL")
+    } finally {
+      kill.mockRestore()
+    }
+  })
+
   it("patches evaluator runtime parameters and seed", () => {
     const result = patchCompiledEvaluatorInput(
-      "{\"nruns\":1,\"nsteps\":1,\"ntraces\":1,\"nthreads\":1,\"seed\":null}",
+      compiledInput("{\"nruns\":1,\"nsteps\":1,\"ntraces\":1,\"nthreads\":1,\"seed\":null}"),
       { spec: "counter.qnt", maxSamples: 7, maxSteps: 5, nTraces: 2, seed: "0x0f" },
       4,
       "000000000000000a"
@@ -160,8 +213,8 @@ describe("compiled evaluator trace adapter", () => {
 
   it("patches decimal seeds as decimal and prefixed hex seeds as hex", () => {
     const rawInput = "{\"nruns\":1,\"nsteps\":1,\"ntraces\":1,\"nthreads\":1,\"seed\":null}"
-    const decimal = patchCompiledEvaluatorInput(rawInput, { spec: "counter.qnt", seed: "42" }, 4, "a")
-    const hex = patchCompiledEvaluatorInput(rawInput, { spec: "counter.qnt", seed: "0x42" }, 4, "a")
+    const decimal = patchCompiledEvaluatorInput(compiledInput(rawInput), { spec: "counter.qnt", seed: "42" }, 4, "a")
+    const hex = patchCompiledEvaluatorInput(compiledInput(rawInput), { spec: "counter.qnt", seed: "0x42" }, 4, "a")
 
     expect(decimal.input).toBe("{\"nruns\":10000,\"nsteps\":10,\"ntraces\":10,\"nthreads\":4,\"seed\":42}")
     expect(decimal.seedHex).toBe("0x2a")
@@ -171,7 +224,7 @@ describe("compiled evaluator trace adapter", () => {
 
   it("injects a seed when compiled input has no seed field", () => {
     const result = patchCompiledEvaluatorInput(
-      "{\"nruns\":1,\"nsteps\":1,\"ntraces\":1,\"nthreads\":1}",
+      compiledInput("{\"nruns\":1,\"nsteps\":1,\"ntraces\":1,\"nthreads\":1}"),
       { spec: "counter.qnt" },
       4,
       "000000000000000a"
@@ -179,6 +232,24 @@ describe("compiled evaluator trace adapter", () => {
 
     expect(result.input).toBe("{\"nruns\":10000,\"nsteps\":10,\"ntraces\":10,\"nthreads\":4,\"seed\":10}")
     expect(result.seedHex).toBe("0xa")
+  })
+
+  it("schema-decodes opaque input while preserving missing runtime fields", () => {
+    const missingRuntime = patchCompiledEvaluatorInput(
+      compiledInput("{\"seed\":null}"),
+      { spec: "counter.qnt" },
+      4,
+      "a"
+    )
+    const opaqueInput = patchCompiledEvaluatorInput(
+      compiledInput("compiled evaluator expression"),
+      { spec: "counter.qnt" },
+      4,
+      "a"
+    )
+
+    expect(missingRuntime.input).toBe("{\"seed\":10}")
+    expect(opaqueInput.input).toBe("compiled evaluator expression")
   })
 
   it("normalizes evaluator stdout to Quint out-itf trace shape", async () => {
@@ -203,6 +274,36 @@ progress
       vars: ["counter"],
       states: [{ counter: 9007199254740993n }]
     }])
+  })
+
+  it("losslessly decodes integer lexemes without changing other JSON primitives", async () => {
+    const traces = await Effect.runPromise(normalizeEvaluatorOutput(`
+{"status":"ok","bestTraces":[{"states":{"#meta":{"index":7,"label":"escaped \\\"value 42\\\""},"vars":["safe","negative","unsafe","decimal","exponent"],"states":[{"safe":42,"negative":-9007199254740993,"unsafe":9007199254740993,"decimal":1.25,"exponent":1e3}]}}]}
+`))
+
+    expect(traces).toEqual([{
+      "#meta": { index: 7n, label: "escaped \"value 42\"" },
+      vars: ["safe", "negative", "unsafe", "decimal", "exponent"],
+      states: [{
+        decimal: 1.25,
+        exponent: 1000,
+        negative: -9007199254740993n,
+        safe: 42n,
+        unsafe: 9007199254740993n
+      }]
+    }])
+  })
+
+  it.each([
+    ["invalid JSON", "{not-json", "Failed to parse evaluator output"],
+    ["invalid envelope", "{\"status\":42,\"bestTraces\":[]}", "Invalid evaluator output"],
+    [
+      "invalid trace",
+      "{\"status\":\"ok\",\"bestTraces\":[{\"states\":{\"vars\":\"invalid\",\"states\":[]}}]}",
+      "Invalid evaluator output"
+    ]
+  ])("rejects %s before trace persistence", async (_case, output, message) => {
+    await expect(Effect.runPromise(normalizeEvaluatorOutput(output))).rejects.toThrow(message)
   })
 
   it("runs with fake evaluator dependencies and the shared trace reader", async () => {
