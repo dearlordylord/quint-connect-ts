@@ -8,7 +8,14 @@ import type { ActionMap, AnyActionDef, Config, Driver } from "./driver/types.js"
 import { decodeStandardPicks } from "./itf/picks.js"
 import { quintRun } from "./runner/runner.js"
 
-export type { RunOptions } from "./cli/quint.js"
+export type {
+  QuintRunGeneration,
+  QuintTestGeneration,
+  RunGenerationOptions,
+  RunOptions,
+  TestGenerationOptions,
+  TraceGenerationMode
+} from "./cli/quint.js"
 export type { Config } from "./driver/types.js"
 export { defaultConfig } from "./driver/types.js"
 

@@ -1,17 +1,92 @@
 import { describe, it } from "@effect/vitest"
-import { Effect, Predicate, Schema } from "effect"
+import { Effect, Layer, Predicate, Schema } from "effect"
 import { expect } from "vitest"
 
 import { ITFBigInt } from "@firfi/itf-trace-parser/effect"
 
 import { defaultConfig } from "../src/driver/types.js"
 import type { ActionMap, Driver } from "../src/driver/types.js"
-import { defineDriver, stateCheck } from "../src/effect.js"
+import { defineDriver, stateCheck, TraceGeneration } from "../src/effect.js"
 import type { ItfTrace } from "../src/itf/schema.js"
 import { decodeReplayStep } from "../src/runner/replay-actions.js"
 import { dispatchReplayAction } from "../src/runner/replay-dispatch.js"
 import { actionContext, stateMismatchError } from "../src/runner/replay-errors.js"
-import { jsonReplacer, replayTrace, StateMismatchError, stripMetadata, TraceReplayError } from "../src/runner/runner.js"
+import {
+  jsonReplacer,
+  NoTracesError,
+  quintRunWithTraceGeneration,
+  replayTrace,
+  StateMismatchError,
+  stripMetadata,
+  TraceReplayError
+} from "../src/runner/runner.js"
+
+describe("trace generation service orchestration", () => {
+  it.effect("generates and replays through an in-memory service without subprocesses or files", () =>
+    Effect.gen(function*() {
+      const generatedWith: Array<{ readonly spec: string; readonly seed: string | undefined }> = []
+      const dispatched: Array<bigint> = []
+      const traceGeneration = Layer.succeed(
+        TraceGeneration,
+        TraceGeneration.of({
+          generate: (opts) => {
+            generatedWith.push({ spec: opts.spec, seed: opts.seed })
+            return Effect.succeed([{
+              vars: ["count", "mbt::actionTaken", "mbt::nondetPicks"],
+              states: [{
+                count: { "#bigint": "4" },
+                "mbt::actionTaken": "Increment",
+                "mbt::nondetPicks": {
+                  amount: { tag: "Some", value: { "#bigint": "4" } }
+                }
+              }]
+            }])
+          }
+        })
+      )
+
+      const result = yield* quintRunWithTraceGeneration({
+        spec: "in-memory.qnt",
+        seed: "0x2a",
+        driverFactory: defineDriver(
+          { Increment: { amount: ITFBigInt } },
+          () => ({
+            Increment: ({ amount }) =>
+              Effect.sync(() => {
+                dispatched.push(amount)
+              })
+          })
+        )
+      }).pipe(Effect.provide(traceGeneration))
+
+      expect(result).toEqual({ tracesReplayed: 1, seed: "0x2a" })
+      expect(generatedWith).toEqual([{ spec: "in-memory.qnt", seed: "0x2a" }])
+      expect(dispatched).toEqual([4n])
+    }))
+
+  it.effect("identifies an empty named-test generation result", () =>
+    Effect.gen(function*() {
+      const traceGeneration = Layer.succeed(
+        TraceGeneration,
+        TraceGeneration.of({ generate: () => Effect.succeed([]) })
+      )
+
+      const error = yield* quintRunWithTraceGeneration({
+        spec: "in-memory.qnt",
+        generation: { mode: "test", test: "scenario" },
+        seed: "1",
+        driverFactory: defineDriver({}, () => ({}))
+      }).pipe(
+        Effect.provide(traceGeneration),
+        Effect.flip
+      )
+
+      expect(error).toBeInstanceOf(NoTracesError)
+      if (error instanceof NoTracesError) {
+        expect(error.message).toBe("quint test produced no traces")
+      }
+    }))
+})
 
 describe("replay action extraction", () => {
   it.effect("decodes an MBT replay step with stripped projected state", () =>

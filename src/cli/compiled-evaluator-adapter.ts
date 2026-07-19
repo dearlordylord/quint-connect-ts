@@ -14,6 +14,7 @@ import { normalizeEvaluatorOutput } from "./compiled-evaluator-output.js"
 import { QuintError, QuintNotFoundError } from "./errors.js"
 import { platformProcess } from "./platform-process.js"
 import type { PlatformProcessBoundary } from "./platform-process.js"
+import { isQuintRunGeneration, isQuintTestGeneration } from "./run-options.js"
 import type { TraceGenerationAdapter } from "./trace-adapter.js"
 import { readTraceFiles, writeTraceFiles } from "./trace-files.js"
 
@@ -151,10 +152,11 @@ const defaultDeps: CompiledEvaluatorAdapterDeps = {
 export const makeCompiledEvaluatorTraceAdapter = (
   deps: CompiledEvaluatorAdapterDeps = defaultDeps
 ): TraceGenerationAdapter => ({
-  canGenerate: (opts) => opts.compiledInput !== undefined && deps.compiledInputExists(opts.compiledInput),
+  canGenerate: (opts) =>
+    !isQuintTestGeneration(opts) && opts.compiledInput !== undefined && deps.compiledInputExists(opts.compiledInput),
   generate: (opts, outDir) =>
     Effect.gen(function*() {
-      if (opts.compiledInput === undefined) {
+      if (!isQuintRunGeneration(opts) || opts.compiledInput === undefined) {
         return yield* new QuintError({ message: "Compiled input path is required for compiled evaluator generation" })
       }
       const rawInput = yield* deps.readCompiledInput(opts.compiledInput)

@@ -1,6 +1,7 @@
 import { Array as Arr, Effect } from "effect"
 import type { QuintError, QuintNotFoundError, RunOptions } from "../cli/quint.js"
-import { generateTraces } from "../cli/quint.js"
+import { isQuintTestGeneration } from "../cli/run-options.js"
+import { TraceGeneration, traceGenerationLayer } from "../cli/trace-generation.js"
 import type { ActionMap, Config, Driver } from "../driver/types.js"
 import { defaultConfig } from "../driver/types.js"
 import type { ItfTrace } from "../itf/schema.js"
@@ -88,7 +89,7 @@ const resolveSeed = (opts: RunOptions): string => {
     ?? `0x${Math.floor(Math.random() * 0xFFFFFFFF).toString(16).padStart(8, "0")}`
 }
 
-export const quintRun = <
+export const quintRunWithTraceGeneration = <
   S,
   E,
   R,
@@ -100,15 +101,16 @@ export const quintRun = <
 ): Effect.Effect<
   { readonly tracesReplayed: number; readonly seed: string },
   E | QuintError | QuintNotFoundError | StateMismatchError | TraceReplayError | NoTracesError,
-  R | StateR
+  R | StateR | TraceGeneration
 > =>
   Effect.gen(function*() {
     const seed = resolveSeed(opts)
     const traceOpts = { ...opts, seed }
-    const traces = yield* generateTraces(traceOpts)
+    const traceGeneration = yield* TraceGeneration
+    const traces = yield* traceGeneration.generate(traceOpts)
     if (traces.length === 0) {
       return yield* new NoTracesError({
-        message: "quint run produced no traces"
+        message: `${isQuintTestGeneration(traceOpts) ? "quint test" : "quint run"} produced no traces`
       })
     }
 
@@ -132,3 +134,18 @@ export const quintRun = <
 
     return { tracesReplayed: results.length, seed }
   })
+
+export const quintRun = <
+  S,
+  E,
+  R,
+  Actions extends ActionMap<E, R> = ActionMap<E, R>,
+  StateE = never,
+  StateR = never
+>(
+  opts: QuintRunOptions<S, E, R, Actions, StateE, StateR>
+): Effect.Effect<
+  { readonly tracesReplayed: number; readonly seed: string },
+  E | QuintError | QuintNotFoundError | StateMismatchError | TraceReplayError | NoTracesError,
+  R | StateR
+> => quintRunWithTraceGeneration(opts).pipe(Effect.provide(traceGenerationLayer))
