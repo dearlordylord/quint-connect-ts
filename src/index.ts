@@ -11,15 +11,4 @@ export {
   transformITFValue
 } from "./simple.js"
 
-export type {
-  Config,
-  QuintRunGeneration,
-  QuintTestGeneration,
-  RunGenerationOptions,
-  RunOptions,
-  SimpleActionMap,
-  SimpleDriver,
-  SimpleRunOptions,
-  TestGenerationOptions,
-  TraceGenerationMode
-} from "./simple.js"
+export type { Config, RunOptions, SimpleActionMap, SimpleDriver, SimpleRunOptions } from "./simple.js"

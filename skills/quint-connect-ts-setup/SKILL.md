@@ -27,7 +27,7 @@ sources:
 
 ## Prerequisites
 
-- Node.js 22+ (for lossless evaluator JSON decoding)
+- Node.js 21+ (for `import.meta.dirname`)
 - ESM project (`"type": "module"` in package.json)
 - Quint CLI on PATH (`npx @informalsystems/quint` works without global install)
 

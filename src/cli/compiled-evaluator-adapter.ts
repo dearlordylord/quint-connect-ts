@@ -1,53 +1,27 @@
-import spawn from "cross-spawn"
 import { Effect } from "effect"
+import { spawn } from "node:child_process"
 import { existsSync, readdirSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { cpus, homedir } from "node:os"
 import { join } from "node:path"
 
-import {
-  decodeCompiledEvaluatorInput,
-  makeRandomSeedHex,
-  patchCompiledEvaluatorInput
-} from "./compiled-evaluator-input.js"
-import { normalizeEvaluatorOutput } from "./compiled-evaluator-output.js"
 import { QuintError, QuintNotFoundError } from "./errors.js"
-import { platformProcess } from "./platform-process.js"
-import type { PlatformProcessBoundary } from "./platform-process.js"
-import { isQuintRunGeneration, isQuintTestGeneration } from "./run-options.js"
+import type { RunOptions } from "./run-options.js"
+import { DEFAULT_MAX_SAMPLES, DEFAULT_MAX_STEPS, DEFAULT_N_TRACES } from "./run-options.js"
 import type { TraceGenerationAdapter } from "./trace-adapter.js"
+import type { ItfTraceJson } from "./trace-files.js"
 import { readTraceFiles, writeTraceFiles } from "./trace-files.js"
+
+const RANDOM_SEED_HEX_LENGTH = 16
+const HEX_RADIX = 16
+const MIN_EVALUATOR_THREADS = 2
+const JSON_BIGINT_SENTINEL = "#quintConnectBigInt"
 
 interface EvaluatorResult {
   readonly stdout: string
   readonly exitCode: number
   readonly stderr: string
 }
-
-// eslint-disable-next-line functional/no-mixed-types -- process handles mix data fields and event methods.
-interface EvaluatorProcess {
-  readonly pid?: number | undefined
-  readonly stdin: {
-    readonly write: (input: string) => unknown
-    readonly end: () => unknown
-  }
-  readonly stdout: {
-    readonly on: (event: "data", listener: (chunk: Buffer) => void) => unknown
-  }
-  readonly stderr: {
-    readonly on: (event: "data", listener: (chunk: Buffer) => void) => unknown
-  }
-  readonly on: {
-    (event: "close", listener: (code: number | null) => void): unknown
-    (event: "error", listener: (error: Error) => void): unknown
-  }
-}
-
-type SpawnEvaluatorProcess = (
-  evaluatorPath: string,
-  args: ReadonlyArray<string>,
-  options: { readonly stdio: ["pipe", "pipe", "pipe"]; readonly detached: boolean }
-) => EvaluatorProcess
 
 interface CompiledEvaluatorAdapterDeps {
   readonly compiledInputExists: (path: string) => boolean
@@ -61,9 +35,96 @@ interface CompiledEvaluatorAdapterDeps {
   ) => Effect.Effect<EvaluatorResult, QuintNotFoundError>
 }
 
-const getRustEvaluatorPath = (
-  processBoundary: PlatformProcessBoundary = platformProcess
-): string => {
+interface PatchedCompiledInput {
+  readonly input: string
+  readonly seedHex: string
+}
+
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === "object" && value !== null
+
+const formatEvaluatorError = (error: unknown): string =>
+  isRecord(error) && typeof error["message"] === "string" ? error["message"] : String(error)
+
+const defaultRandomSeedHex = (): string =>
+  Array.from(
+    { length: RANDOM_SEED_HEX_LENGTH },
+    () => Math.floor(Math.random() * HEX_RADIX).toString(HEX_RADIX)
+  ).join("")
+
+const parseSeed: (seed: string) => bigint = BigInt
+
+const isJsonDigit = (char: string): boolean => char >= "0" && char <= "9"
+
+const wrapJsonIntegerLiterals = (json: string): string => {
+  let result = ""
+  let index = 0
+  let inString = false
+  let escaped = false
+
+  while (index < json.length) {
+    const char = json[index]
+
+    if (inString) {
+      result += char
+      if (escaped) {
+        escaped = false
+      } else if (char === "\\") {
+        escaped = true
+      } else if (char === "\"") {
+        inString = false
+      }
+      index += 1
+      continue
+    }
+
+    if (char === "\"") {
+      inString = true
+      result += char
+      index += 1
+      continue
+    }
+
+    if (char === "-" || isJsonDigit(char)) {
+      const start = index
+      let cursor = char === "-" ? index + 1 : index
+      while (cursor < json.length && isJsonDigit(json[cursor])) {
+        cursor += 1
+      }
+      const isInteger = cursor > start && json[cursor] !== "." && json[cursor] !== "e" && json[cursor] !== "E"
+      if (!isInteger) {
+        while (
+          cursor < json.length
+          && ![",", "]", "}", " ", "\n", "\r", "\t"].includes(json[cursor])
+        ) {
+          cursor += 1
+        }
+      }
+      const token = json.slice(start, cursor)
+      result += isInteger ? `{"${JSON_BIGINT_SENTINEL}":"${token}"}` : token
+      index = cursor
+      continue
+    }
+
+    result += char
+    index += 1
+  }
+
+  return result
+}
+
+const unwrapJsonBigIntSentinel = (_key: string, value: unknown): unknown => {
+  if (
+    isRecord(value)
+    && Object.keys(value).length === 1
+    && typeof value[JSON_BIGINT_SENTINEL] === "string"
+  ) {
+    return BigInt(value[JSON_BIGINT_SENTINEL])
+  }
+  return value
+}
+
+const getRustEvaluatorPath = (): string => {
   const quintDir = join(homedir(), ".quint")
   if (!existsSync(quintDir)) {
     throw new Error(`Quint home directory not found: ${quintDir}`)
@@ -77,42 +138,33 @@ const getRustEvaluatorPath = (
     ? dirs.find((dir) => dir.includes(preferredVersion))
     : undefined
   const latest = preferred ?? dirs[dirs.length - 1]
-  const exePath = join(quintDir, latest, processBoundary.executableName("quint_evaluator"))
+  const exePath = join(quintDir, latest, "quint_evaluator")
   if (!existsSync(exePath)) {
     throw new Error(`Rust evaluator binary not found: ${exePath}`)
   }
   return exePath
 }
 
-export const makeRunEvaluatorProcess = (
-  spawnProcess: SpawnEvaluatorProcess = (evaluatorPath, args, options) => {
-    const proc = spawn(evaluatorPath, [...args], options)
-    if (proc.stdin === null || proc.stdout === null || proc.stderr === null) {
-      throw new Error("Rust evaluator was spawned without piped stdio")
-    }
-    return {
-      pid: proc.pid,
-      stdin: proc.stdin,
-      stdout: proc.stdout,
-      stderr: proc.stderr,
-      on: proc.on.bind(proc)
-    }
-  },
-  processBoundary: PlatformProcessBoundary = platformProcess
-) =>
-(
+const runEvaluatorDirect = (
   evaluatorPath: string,
   inputStr: string
 ): Effect.Effect<EvaluatorResult, QuintNotFoundError> =>
-  Effect.callback((resume) => {
+  Effect.async((resume) => {
     let stdout = ""
     let stderr = ""
-    const proc = spawnProcess(evaluatorPath, ["simulate-from-stdin"], {
+    const proc = spawn(evaluatorPath, ["simulate-from-stdin"], {
       stdio: ["pipe", "pipe", "pipe"],
-      detached: processBoundary.detached
+      detached: true
     })
 
-    const lifecycle = processBoundary.makeLifecycle(() => proc)
+    const killGroup = () => {
+      try {
+        process.kill(-proc.pid!, "SIGKILL")
+      } catch {
+        // already dead
+      }
+    }
+    process.on("exit", killGroup)
 
     proc.stdin.write(inputStr)
     proc.stdin.end()
@@ -124,23 +176,24 @@ export const makeRunEvaluatorProcess = (
       stderr += chunk.toString()
     })
     proc.on("close", (code) => {
-      lifecycle.complete()
+      process.removeListener("exit", killGroup)
       resume(Effect.succeed({ stdout, exitCode: code ?? 1, stderr }))
     })
     proc.on("error", (e) => {
-      lifecycle.complete()
+      process.removeListener("exit", killGroup)
       resume(Effect.fail(new QuintNotFoundError({ message: `Failed to start Rust evaluator: ${e}` })))
     })
-    return lifecycle.interrupt
+    return Effect.sync(() => {
+      process.removeListener("exit", killGroup)
+      killGroup()
+    })
   })
-
-const runEvaluatorDirect = makeRunEvaluatorProcess()
 
 const defaultDeps: CompiledEvaluatorAdapterDeps = {
   compiledInputExists: existsSync,
   cpuCount: () => cpus().length,
   getEvaluatorPath: getRustEvaluatorPath,
-  randomSeedHex: makeRandomSeedHex,
+  randomSeedHex: defaultRandomSeedHex,
   readCompiledInput: (compiledInputPath) =>
     Effect.tryPromise({
       try: () => readFile(compiledInputPath, "utf-8"),
@@ -149,24 +202,82 @@ const defaultDeps: CompiledEvaluatorAdapterDeps = {
   runEvaluator: runEvaluatorDirect
 }
 
+export const patchCompiledEvaluatorInput = (
+  rawInput: string,
+  opts: RunOptions,
+  cpuCount: number,
+  randomSeedHex: string
+): PatchedCompiledInput => {
+  const nTraces = opts.nTraces ?? DEFAULT_N_TRACES
+  const maxSamples = opts.maxSamples ?? DEFAULT_MAX_SAMPLES
+  const maxSteps = opts.maxSteps ?? DEFAULT_MAX_STEPS
+  const nThreads = Math.max(MIN_EVALUATOR_THREADS, Math.min(maxSamples, cpuCount))
+
+  let patchedInput = rawInput
+    .replace(/"nruns":\s*\d+/, `"nruns":${maxSamples}`)
+    .replace(/"nsteps":\s*\d+/, `"nsteps":${maxSteps}`)
+    .replace(/"ntraces":\s*\d+/, `"ntraces":${nTraces}`)
+    .replace(/"nthreads":\s*\d+/, `"nthreads":${nThreads}`)
+
+  const seedBigint = opts.seed !== undefined ? parseSeed(opts.seed) : BigInt(`0x${randomSeedHex}`)
+  const seedHex = `0x${seedBigint.toString(HEX_RADIX)}`
+  const seedReplaced = patchedInput.replace(/"seed":\s*(?:null|undefined|\d+)/, `"seed":${seedBigint}`)
+  patchedInput = seedReplaced === patchedInput
+    ? patchedInput.replace(/}\s*$/, `,"seed":${seedBigint}}`)
+    : seedReplaced
+
+  return { input: patchedInput, seedHex }
+}
+
+export const normalizeEvaluatorOutput = (
+  stdout: string
+): Effect.Effect<ReadonlyArray<ItfTraceJson>, QuintError> =>
+  Effect.gen(function*() {
+    const jsonLine = stdout.split("\n").filter((line) => line.trimStart().startsWith("{")).pop()
+    if (jsonLine === undefined) {
+      return yield* new QuintError({ message: "No JSON output from Rust evaluator" })
+    }
+
+    const parsed: unknown = yield* Effect.try({
+      try: () => JSON.parse(wrapJsonIntegerLiterals(jsonLine), unwrapJsonBigIntSentinel),
+      catch: (e) => new QuintError({ message: `Failed to parse evaluator output: ${e}` })
+    })
+
+    if (isRecord(parsed) && parsed["status"] === "error") {
+      const errors = Array.isArray(parsed["errors"]) ? parsed["errors"] : []
+      return yield* new QuintError({
+        message: `Quint simulation error:\n${errors.map(formatEvaluatorError).join("\n")}`
+      })
+    }
+
+    const bestTraces = isRecord(parsed) && Array.isArray(parsed["bestTraces"]) ? parsed["bestTraces"] : []
+    return bestTraces.flatMap((bestTrace): ReadonlyArray<ItfTraceJson> => {
+      if (!isRecord(bestTrace) || !isRecord(bestTrace["states"])) {
+        return []
+      }
+      const statesObj = bestTrace["states"]
+      const trace: Record<string, unknown> = {
+        vars: statesObj["vars"],
+        states: statesObj["states"]
+      }
+      if (Object.hasOwn(statesObj, "#meta")) {
+        trace["#meta"] = statesObj["#meta"]
+      }
+      return [trace]
+    })
+  })
+
 export const makeCompiledEvaluatorTraceAdapter = (
   deps: CompiledEvaluatorAdapterDeps = defaultDeps
 ): TraceGenerationAdapter => ({
-  canGenerate: (opts) =>
-    !isQuintTestGeneration(opts) && opts.compiledInput !== undefined && deps.compiledInputExists(opts.compiledInput),
+  canGenerate: (opts) => opts.compiledInput !== undefined && deps.compiledInputExists(opts.compiledInput),
   generate: (opts, outDir) =>
     Effect.gen(function*() {
-      if (!isQuintRunGeneration(opts) || opts.compiledInput === undefined) {
+      if (opts.compiledInput === undefined) {
         return yield* new QuintError({ message: "Compiled input path is required for compiled evaluator generation" })
       }
       const rawInput = yield* deps.readCompiledInput(opts.compiledInput)
-      const compiledInput = yield* decodeCompiledEvaluatorInput(rawInput)
-      const { input, seedHex } = patchCompiledEvaluatorInput(
-        compiledInput,
-        opts,
-        deps.cpuCount(),
-        deps.randomSeedHex()
-      )
+      const { input, seedHex } = patchCompiledEvaluatorInput(rawInput, opts, deps.cpuCount(), deps.randomSeedHex())
       console.error(`[quint-connect] seed: ${seedHex} (compiled-input path)`)
 
       const evaluatorPath = yield* Effect.try({
@@ -189,6 +300,3 @@ export const makeCompiledEvaluatorTraceAdapter = (
 })
 
 export const compiledEvaluatorTraceAdapter: TraceGenerationAdapter = makeCompiledEvaluatorTraceAdapter()
-
-export { decodeCompiledEvaluatorInput, patchCompiledEvaluatorInput } from "./compiled-evaluator-input.js"
-export { normalizeEvaluatorOutput } from "./compiled-evaluator-output.js"
