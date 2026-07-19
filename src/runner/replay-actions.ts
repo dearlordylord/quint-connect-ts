@@ -1,18 +1,21 @@
 import { Effect, Predicate, Schema } from "effect"
 
-import type { ActionMap, AnyActionDef } from "../driver/types.js"
+import type { ActionMap, AnyActionDef, Config } from "../driver/types.js"
 import { buildEffectPicksDecoder } from "../itf/picks.js"
 import type { MbtMeta } from "../itf/schema.js"
 import { MbtMeta as MbtMetaSchema } from "../itf/schema.js"
 import type { ReplayStepContext, TraceReplayError } from "./replay-errors.js"
 import { actionContext, traceReplayError } from "./replay-errors.js"
 import type { TraceStateRecord } from "./trace-state.js"
-import { resolveNestedValue } from "./trace-state.js"
+import { resolveNestedValue, stripMetadata } from "./trace-state.js"
 
-interface ReplayAction {
+export interface ReplayStep {
   readonly action: string
   readonly nondetPicks: ReadonlyMap<string, unknown>
+  readonly specState: unknown
 }
+
+type ReplayAction = Omit<ReplayStep, "specState">
 
 const extractMbtMeta = (
   state: TraceStateRecord,
@@ -63,6 +66,41 @@ export const extractReplayAction = (
       action: meta["mbt::actionTaken"],
       nondetPicks: new Map(Object.entries(meta["mbt::nondetPicks"]))
     }))
+
+const projectSpecState = (
+  state: TraceStateRecord,
+  statePath: ReadonlyArray<string>,
+  action: string,
+  context: ReplayStepContext
+): Effect.Effect<unknown, TraceReplayError> => {
+  if (statePath.length === 0) {
+    return Effect.succeed(stripMetadata(state))
+  }
+
+  const projected = resolveNestedValue(state, statePath)
+  return projected === undefined
+    ? Effect.fail(
+      traceReplayError(
+        actionContext(context, action),
+        `Expected state at path ${statePath.join(".")}, got: undefined`
+      )
+    )
+    : Effect.succeed(projected)
+}
+
+/** Decode all data needed to dispatch and check one trace state. */
+export const decodeReplayStep = (
+  state: TraceStateRecord,
+  config: Config,
+  context: ReplayStepContext
+): Effect.Effect<ReplayStep, TraceReplayError> =>
+  Effect.gen(function*() {
+    const replayAction = yield* extractReplayAction(state, config.nondetPath ?? [], context)
+    const specState = replayAction.action !== ""
+      ? yield* projectSpecState(state, config.statePath ?? [], replayAction.action, context)
+      : undefined
+    return { ...replayAction, specState }
+  })
 
 export const buildPicksDecoder = buildEffectPicksDecoder<AnyActionDef["picks"]["fields"]>
 

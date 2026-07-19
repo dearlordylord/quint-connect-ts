@@ -11,7 +11,7 @@ import { TraceGeneration, traceGenerationLayer } from "../cli/trace-generation.j
 import type { ActionMap, Config, Driver } from "../driver/types.js"
 import { defaultConfig } from "../driver/types.js"
 import type { ItfTrace } from "../itf/schema.js"
-import { buildPicksDecoders, extractReplayAction } from "./replay-actions.js"
+import { buildPicksDecoders, decodeReplayStep, extractReplayAction } from "./replay-actions.js"
 import { dispatchReplayAction } from "./replay-dispatch.js"
 import {
   actionContext,
@@ -29,23 +29,31 @@ export { jsonReplacer, NoTracesError, StateMismatchError, stripMetadata, TraceRe
 export type { StateCheck } from "./state-check.js"
 
 /** @internal */
-export const replayTrace = <S, E, R, Actions extends ActionMap<E, R>>(
+export const replayTrace = <
+  S,
+  E,
+  R,
+  Actions extends ActionMap<E, R>,
+  StateE = never,
+  StateR = never
+>(
   trace: ItfTrace,
   traceIndex: number,
   driver: Driver<S, E, R, Actions>,
   config: Config,
-  stateCheck: StateCheck<S> | undefined,
+  stateCheck: StateCheck<S, StateE, StateR> | undefined,
   seed: string
-): Effect.Effect<void, E | StateMismatchError | TraceReplayError, R> =>
+): Effect.Effect<void, E | StateMismatchError | TraceReplayError, R | StateR> =>
   Effect.gen(function*() {
     const picksDecoders = buildPicksDecoders(driver.actions)
 
-    const statePath = config.statePath ?? []
-    const nondetPath = config.nondetPath ?? []
-
     for (const [stepIndex, rawState] of trace.states.entries()) {
       const stepContext = { traceIndex, stepIndex }
-      const { action, nondetPicks } = yield* extractReplayAction(rawState, nondetPath, stepContext)
+      const decodedStep = stateCheck === undefined
+        ? undefined
+        : yield* decodeReplayStep(rawState, config, stepContext)
+      const step = decodedStep ?? (yield* extractReplayAction(rawState, config.nondetPath ?? [], stepContext))
+      const { action, nondetPicks } = step
       const context = actionContext(stepContext, action)
 
       // Defensive: skip step 0 if actionTaken is empty (both backends normally produce "init").
@@ -57,15 +65,12 @@ export const replayTrace = <S, E, R, Actions extends ActionMap<E, R>>(
       const dispatchResult = yield* dispatchReplayAction(driver.actions, action, nondetPicks, context, picksDecoders)
       if (dispatchResult === "skipped") continue
 
-      if (stateCheck !== undefined) {
+      if (stateCheck !== undefined && decodedStep !== undefined) {
         yield* checkReplayState({
-          rawState,
-          statePath,
+          step: decodedStep,
           driver,
           stateCheck,
-          traceIndex,
-          stepIndex,
-          action,
+          context,
           seed
         })
       }
@@ -76,12 +81,14 @@ interface QuintReplayOptions<
   S,
   E,
   R,
-  Actions extends ActionMap<E, R> = ActionMap<E, R>
+  Actions extends ActionMap<E, R> = ActionMap<E, R>,
+  StateE = never,
+  StateR = never
 > {
   readonly driverFactory: {
     readonly create: () => Effect.Effect<Driver<S, E, R, Actions>, E, R>
   }
-  readonly stateCheck?: StateCheck<S> | undefined
+  readonly stateCheck?: StateCheck<S, StateE, StateR> | undefined
   readonly concurrency?: number | undefined
 }
 
@@ -89,22 +96,28 @@ export type QuintRunOptions<
   S,
   E,
   R,
-  Actions extends ActionMap<E, R> = ActionMap<E, R>
-> = RunOptions & QuintReplayOptions<S, E, R, Actions>
+  Actions extends ActionMap<E, R> = ActionMap<E, R>,
+  StateE = never,
+  StateR = never
+> = RunOptions & QuintReplayOptions<S, E, R, Actions, StateE, StateR>
 
 export type QuintTestOptions<
   S,
   E,
   R,
-  Actions extends ActionMap<E, R> = ActionMap<E, R>
-> = TestGenerationOptions & QuintReplayOptions<S, E, R, Actions>
+  Actions extends ActionMap<E, R> = ActionMap<E, R>,
+  StateE = never,
+  StateR = never
+> = TestGenerationOptions & QuintReplayOptions<S, E, R, Actions, StateE, StateR>
 
 export type QuintGenerationOptions<
   S,
   E,
   R,
-  Actions extends ActionMap<E, R> = ActionMap<E, R>
-> = QuintRunOptions<S, E, R, Actions> | QuintTestOptions<S, E, R, Actions>
+  Actions extends ActionMap<E, R> = ActionMap<E, R>,
+  StateE = never,
+  StateR = never
+> = QuintRunOptions<S, E, R, Actions, StateE, StateR> | QuintTestOptions<S, E, R, Actions, StateE, StateR>
 
 /** Resolve the seed. Always generates a real seed so failures are reproducible. */
 const resolveSeed = (opts: TraceGenerationOptions): string => {
@@ -116,13 +129,15 @@ export const quintRunWithTraceGeneration = <
   S,
   E,
   R,
-  Actions extends ActionMap<E, R> = ActionMap<E, R>
+  Actions extends ActionMap<E, R> = ActionMap<E, R>,
+  StateE = never,
+  StateR = never
 >(
-  opts: QuintGenerationOptions<S, E, R, Actions>
+  opts: QuintGenerationOptions<S, E, R, Actions, StateE, StateR>
 ): Effect.Effect<
   { readonly tracesReplayed: number; readonly seed: string },
   E | QuintError | QuintNotFoundError | StateMismatchError | TraceReplayError | NoTracesError,
-  R | TraceGeneration
+  R | StateR | TraceGeneration
 > =>
   Effect.gen(function*() {
     const seed = resolveSeed(opts)
@@ -161,11 +176,13 @@ export const quintRun = <
   S,
   E,
   R,
-  Actions extends ActionMap<E, R> = ActionMap<E, R>
+  Actions extends ActionMap<E, R> = ActionMap<E, R>,
+  StateE = never,
+  StateR = never
 >(
-  opts: QuintGenerationOptions<S, E, R, Actions>
+  opts: QuintGenerationOptions<S, E, R, Actions, StateE, StateR>
 ): Effect.Effect<
   { readonly tracesReplayed: number; readonly seed: string },
   E | QuintError | QuintNotFoundError | StateMismatchError | TraceReplayError | NoTracesError,
-  R
+  R | StateR
 > => quintRunWithTraceGeneration(opts).pipe(Effect.provide(traceGenerationLayer))
