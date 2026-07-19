@@ -157,6 +157,10 @@ Action-pick schemas and schemas passed to `ItfOption` must be service-free codec
 
 See [examples/counter/counter-effect.test.ts](examples/counter/counter-effect.test.ts) for a complete runnable vitest example.
 
+#### Windows validation coverage
+
+A pinned `windows-2022` CI job (`pnpm test:windows`, `test/windows-lifecycle.test.ts`) validates real win32 behavior against the locally pinned `@informalsystems/quint` dependency, with no network/npx fallback: `quint.cmd` resolution through `PATH` and through an explicit `quintBin`, trace generation with spaces in spec and trace-directory paths, `taskkill /T /F` termination of a controlled child process tree, and lifecycle-listener cleanup after completion. The npx-fallback path is exercised for command selection only (`npx.cmd`), never a real spawn, to avoid registry installs. Signal-propagation ordering, `tasklist` zombie-count parsing, and the direct-kill fallback when `taskkill` is unavailable remain unit-tested through the injected process boundary in `test/platform-process.test.ts`, since they require simulated OS command failures and self-signal delivery that a live runner cannot reproduce deterministically.
+
 ### Vitest Helpers
 
 Simple API helper (no Effect dependency needed):

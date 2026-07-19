@@ -55,6 +55,7 @@
     "test:coverage": "vitest run --coverage",
     "test:packed-consumer": "pnpm check:test-tooling && pnpm build && node scripts/packed-consumer-smoke.mjs",
     "test:watch": "vitest",
+    "test:windows": "vitest run test/windows-lifecycle.test.ts",
     "lint": "eslint src test examples --ext .ts && jscpd src",
     "lint:fix": "eslint src test examples --ext .ts --fix",
     "check-format": "eslint src test examples --ext .ts --rule '@effect/dprint: error'",
