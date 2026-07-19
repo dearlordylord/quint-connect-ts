@@ -14,26 +14,11 @@ export type {
 } from "./driver/types.js"
 export { defaultConfig } from "./driver/types.js"
 
-export type {
-  QuintRunGeneration,
-  QuintTestGeneration,
-  RunGenerationOptions,
-  RunOptions,
-  TestGenerationOptions,
-  TraceGenerationMode
-} from "./cli/quint.js"
+export type { RunOptions } from "./cli/quint.js"
 export { generateTraces, QuintError, QuintNotFoundError } from "./cli/quint.js"
-export type { TraceGenerationService } from "./cli/trace-generation.js"
-export { TraceGeneration, traceGenerationLayer } from "./cli/trace-generation.js"
 
 export type { QuintRunOptions, StateCheck } from "./runner/runner.js"
-export {
-  NoTracesError,
-  quintRun,
-  quintRunWithTraceGeneration,
-  StateMismatchError,
-  TraceReplayError
-} from "./runner/runner.js"
+export { NoTracesError, quintRun, StateMismatchError, TraceReplayError } from "./runner/runner.js"
 
 export {
   ITFBigInt,
@@ -50,76 +35,47 @@ export {
 } from "./itf/schema.js"
 export type { ITFValueRaw } from "./itf/schema.js"
 
-export const stateCheck = <S, E, R>(
-  deserializeState: (raw: unknown) => Effect.Effect<S, E, R>,
+export const stateCheck = <S>(
+  deserializeState: (raw: unknown) => Effect.Effect<S>,
   compareState: (spec: S, impl: S) => boolean
-): StateCheck<S, E, R> => ({ compareState, deserializeState })
+): StateCheck<S> => ({ compareState, deserializeState })
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type EffectPicksSchema = Record<string, Schema.Schema<any>>
+type EffectPicksSchema = Record<string, Schema.Schema<any, any, never>>
 
 type EffectHandlerPicks<Fields extends EffectPicksSchema> = {
   readonly [K in keyof Fields]: Schema.Schema.Type<Fields[K]>
 }
 
-type EffectDriverFactoryResult<
-  S extends Record<string, EffectPicksSchema>
-> =
-  & {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    [K in keyof S]: (picks: EffectHandlerPicks<S[K]>) => Effect.Effect<void, any, any>
-  }
-  & {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    getState?: () => Effect.Effect<any, any, any>
-    config?: () => Config
-  }
-
-type FactoryState<F> = F extends {
-  readonly getState: () => Effect.Effect<infer State, infer _Error, infer _Requirements>
-} ? State
-  : unknown
-
-type FactoryError<F> = {
-  [K in keyof F]: F[K] extends (...args: ReadonlyArray<never>) => Effect.Effect<unknown, infer E, unknown> ? E : never
-}[keyof F]
-
-type FactoryRequirements<F> = {
-  [K in keyof F]: F[K] extends (...args: ReadonlyArray<never>) => Effect.Effect<unknown, unknown, infer R> ? R : never
-}[keyof F]
-
-export function defineDriver<
+export const defineDriver = <
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  S extends Record<string, Record<string, Schema.Schema<any>>>,
-  Factory extends EffectDriverFactoryResult<S>
+  S extends Record<string, Record<string, Schema.Schema<any, any, never>>>,
+  State = unknown,
+  E = never,
+  R = never
 >(
   schema: S,
-  factory: () => Factory
-): DriverFactory<FactoryState<Factory>, FactoryError<Factory>, FactoryRequirements<Factory>>
-// Implementation
-export function defineDriver(
-  schema: Record<string, EffectPicksSchema>,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  factory: () => any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): DriverFactory<any, any, any> {
-  return {
-    create: () =>
-      Effect.sync(() => {
-        const result = factory()
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const actions: Record<string, AnyActionDef<any, any>> = {}
-        for (const [name, fields] of Object.entries(schema)) {
-          actions[name] = {
-            picks: Schema.Struct(fields),
-            handler: result[name]
-          }
+  factory: () =>
+    & { [K in keyof S]: (picks: EffectHandlerPicks<S[K]>) => Effect.Effect<void, E, R> }
+    & {
+      getState?: () => Effect.Effect<State, E, R>
+      config?: () => Config
+    }
+): DriverFactory<State, E, R> => ({
+  create: () =>
+    Effect.sync(() => {
+      const result = factory()
+      const actions: Record<string, AnyActionDef<E, R>> = {}
+      for (const [name, fields] of Object.entries(schema)) {
+        actions[name] = {
+          picks: Schema.Struct(fields),
+          handler: result[name]
         }
-        return {
-          actions,
-          ...(result.getState ? { getState: result.getState } : {}),
-          ...(result.config ? { config: result.config } : {})
-        }
-      })
-  }
-}
+      }
+      return {
+        actions,
+        ...(result.getState ? { getState: result.getState } : {}),
+        ...(result.config ? { config: result.config } : {})
+      }
+    })
+})

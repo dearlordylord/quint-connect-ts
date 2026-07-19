@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit, Option, Result, Schema } from "effect"
+import { Cause, Effect, Exit, Option, Schema } from "effect"
 
 import { transformITFValue } from "@firfi/itf-trace-parser"
 import type { StandardSchemaV1 } from "@standard-schema/spec"
@@ -8,14 +8,7 @@ import type { ActionMap, AnyActionDef, Config, Driver } from "./driver/types.js"
 import { decodeStandardPicks } from "./itf/picks.js"
 import { quintRun } from "./runner/runner.js"
 
-export type {
-  QuintRunGeneration,
-  QuintTestGeneration,
-  RunGenerationOptions,
-  RunOptions,
-  TestGenerationOptions,
-  TraceGenerationMode
-} from "./cli/quint.js"
+export type { RunOptions } from "./cli/quint.js"
 export type { Config } from "./driver/types.js"
 export { defaultConfig } from "./driver/types.js"
 
@@ -139,7 +132,7 @@ export function defineDriver<
 const wrapAction = (
   actionDef: AnySimpleActionDef
 ): AnyActionDef => {
-  const fields: Record<string, Schema.Schema<unknown>> = {}
+  const fields: Record<string, Schema.Schema<unknown, unknown, never>> = {}
   for (const key of Object.keys(actionDef.picks)) {
     fields[key] = Schema.Unknown
   }
@@ -147,9 +140,9 @@ const wrapAction = (
   return {
     picks: Schema.Struct(fields),
     handler: (rawPicks) =>
-      Effect.gen(function*() {
-        const decoded = yield* Effect.promise(() => decodeStandardPicks(rawPicks, actionDef.picks))
-        yield* Effect.promise(() => Promise.resolve(actionDef.handler(decoded)))
+      Effect.promise(async () => {
+        const decoded = await decodeStandardPicks(rawPicks, actionDef.picks)
+        await Promise.resolve(actionDef.handler(decoded))
       })
   }
 }
@@ -189,10 +182,10 @@ export const run = <S, Actions extends SimpleActionMap>(
 
   return Effect.runPromiseExit(program).then((exit) => {
     if (Exit.isSuccess(exit)) return exit.value
-    const failure = Cause.findErrorOption(exit.cause)
+    const failure = Cause.failureOption(exit.cause)
     if (Option.isSome(failure)) throw failure.value
-    const defect = Cause.findDefect(exit.cause)
-    if (Result.isSuccess(defect)) throw defect.success
+    const defect = Cause.dieOption(exit.cause)
+    if (Option.isSome(defect)) throw defect.value
     throw new Error("Unknown error in quint-connect run()")
   })
 }

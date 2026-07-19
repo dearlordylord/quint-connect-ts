@@ -63,7 +63,7 @@ describe("Vitest helpers", () => {
         }
       ),
       stateCheck: effectStateCheck(
-        (raw) => Schema.decodeUnknownEffect(CounterStateSchema)(raw).pipe(Effect.orDie),
+        (raw) => Schema.decodeUnknown(CounterStateSchema)(raw).pipe(Effect.orDie),
         (spec, impl) => spec.count === impl.count
       )
     })

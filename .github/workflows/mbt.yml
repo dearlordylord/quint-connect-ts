@@ -16,8 +16,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm check:test-tooling
+      - run: pnpm install
       - run: pnpm test
         env:
           QUINT_BACKEND: typescript
