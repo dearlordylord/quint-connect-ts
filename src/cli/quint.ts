@@ -9,28 +9,37 @@ import type { QuintNotFoundError } from "./errors.js"
 import { QuintError } from "./errors.js"
 import { platformProcess } from "./platform-process.js"
 import { quintCliTraceAdapter } from "./quint-cli-adapter.js"
-import type { RunOptions } from "./run-options.js"
+import type { TraceGenerationOptions } from "./run-options.js"
 import type { TraceGenerationAdapter } from "./trace-adapter.js"
+import { validateTraceGenerationConfiguration } from "./trace-generation-policy.js"
 
 export { QuintError, QuintNotFoundError } from "./errors.js"
-export type { RunOptions } from "./run-options.js"
+export type {
+  QuintRunGeneration,
+  QuintTestGeneration,
+  RunGenerationOptions,
+  RunOptions,
+  TestGenerationOptions,
+  TraceGenerationMode,
+  TraceGenerationOptions
+} from "./run-options.js"
 
 const traceGenerationAdapters: ReadonlyArray<TraceGenerationAdapter> = [
   compiledEvaluatorTraceAdapter,
   quintCliTraceAdapter
 ]
 
-const selectTraceGenerationAdapter = (opts: RunOptions): TraceGenerationAdapter =>
+const selectTraceGenerationAdapter = (opts: TraceGenerationOptions): TraceGenerationAdapter =>
   traceGenerationAdapters.find((adapter) => adapter.canGenerate(opts)) ?? quintCliTraceAdapter
 
 const generateTracesInDir = (
-  opts: RunOptions,
+  opts: TraceGenerationOptions,
   outDir: string
 ): Effect.Effect<ReadonlyArray<ItfTrace>, QuintError | QuintNotFoundError> =>
   selectTraceGenerationAdapter(opts).generate(opts, outDir)
 
 const generateTracesWithTraceDir = (
-  opts: RunOptions,
+  opts: TraceGenerationOptions,
   traceDir: string
 ): Effect.Effect<ReadonlyArray<ItfTrace>, QuintError | QuintNotFoundError> =>
   Effect.gen(function*() {
@@ -42,7 +51,7 @@ const generateTracesWithTraceDir = (
   })
 
 const generateTracesWithTempDir = (
-  opts: RunOptions
+  opts: TraceGenerationOptions
 ): Effect.Effect<ReadonlyArray<ItfTrace>, QuintError | QuintNotFoundError> =>
   Effect.acquireUseRelease(
     Effect.tryPromise({
@@ -69,9 +78,10 @@ const warnZombieEvaluators = (): Effect.Effect<void> =>
   })
 
 export const generateTraces = (
-  opts: RunOptions
+  opts: TraceGenerationOptions
 ): Effect.Effect<ReadonlyArray<ItfTrace>, QuintError | QuintNotFoundError> =>
   Effect.gen(function*() {
+    yield* validateTraceGenerationConfiguration(opts)
     yield* warnZombieEvaluators()
     return yield* opts.traceDir !== undefined
       ? generateTracesWithTraceDir(opts, opts.traceDir)

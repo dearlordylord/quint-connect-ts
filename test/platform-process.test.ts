@@ -102,7 +102,6 @@ describe("platform process boundary", () => {
     expect(platform.exitListeners).toEqual([])
     expect(platform.killProcess).not.toHaveBeenCalled()
   })
-
   it("shares close, startup-error, and lifecycle handling across subprocess adapters", async () => {
     const platform = makeBoundary("linux")
     const completed = new FakeProcess(90)
@@ -216,7 +215,6 @@ describe("platform process boundary", () => {
     })
     expect(platform.exitListeners).toEqual([])
   })
-
   it("selects POSIX command names, evaluator names, and detached process groups", () => {
     const { boundary } = makeBoundary("linux")
 

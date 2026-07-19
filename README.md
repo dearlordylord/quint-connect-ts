@@ -205,18 +205,33 @@ Shared by `run`, `quintRun`, and `generateTraces`:
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `spec` | `string` | *required* | Path to the `.qnt` spec file |
+| `generation` | `{ mode: "test", test: string }` | `{ mode: "run" }` | Generate replay traces from exactly one named Quint test instead of `quint run --mbt`. |
 | `seed` | `string` | random | RNG seed for reproducible runs. Must be a big integer: decimal (`"42"`) or hex (`"0x138ff8c9"`). Also reads `QUINT_SEED` env var as fallback. When omitted, a random hex seed is generated and returned in `result.seed` for reproducibility. |
-| `nTraces` | `number` | `10` | Number of traces to generate |
-| `maxSteps` | `number` | quint default | Maximum steps per trace |
-| `maxSamples` | `number` | quint default | Maximum samples before giving up on finding a valid step |
-| `init` | `string` | quint default | Name of the init action |
-| `step` | `string` | quint default | Name of the step action |
+| `nTraces` | `number` | `10` | Run mode only: number of simulation traces to generate |
+| `maxSteps` | `number` | quint default | Run mode only: maximum steps per trace |
+| `maxSamples` | `number` | run: quint default; test: `10` | Run mode: maximum samples before giving up on a valid step. Test mode: successful randomized test executions requested from Quint. |
+| `init` | `string` | quint default | Run mode only: name of the init action |
+| `step` | `string` | quint default | Run mode only: name of the step action |
 | `main` | `string` | quint default | Name of the main module. Required when the `.qnt` file contains multiple modules. |
-| `backend` | `"typescript" \| "rust"` | `"typescript"` | Simulation backend. TypeScript works out of the box; `"rust"` requires the Rust evaluator. |
-| `invariants` | `string[]` | — | Invariant names to check during simulation |
-| `witnesses` | `string[]` | — | Witness names to report |
+| `backend` | `"typescript" \| "rust"` | `QUINT_BACKEND`, then `"typescript"` | Simulation backend. TypeScript works out of the box; `"rust"` requires the Rust evaluator. A present `QUINT_BACKEND` must be exactly `typescript` or `rust`; malformed values fail before Quint starts. |
+| `quintBin` | `string` | `QUINT_BIN`, then `quint` on `PATH` | Exact Quint executable path or command. An explicit value never falls back to `npx`, which is useful for pinned mise/Nix/toolchain installations. |
+| `invariants` | `string[]` | — | Run mode only: invariant names to check during simulation |
+| `witnesses` | `string[]` | — | Run mode only: witness names to report |
 | `verbose` | `boolean` | `false` | Sets `QUINT_VERBOSE=true`. Quint logs detailed simulation output to stderr. |
 | `traceDir` | `string` | temp dir | Directory to write ITF trace files. Files are kept after run. Useful for debugging — inspect generated traces when a test fails. |
+| `compiledInput` | `string` | — | Run mode only: path to Quint's compiled Rust evaluator input. When present and readable, replay uses the compiled evaluator directly. |
+
+Named-test mode uses an escaped, anchored `quint test --match` expression, so only the requested test runs:
+
+```ts
+quintRun({
+  ...options,
+  generation: { mode: "test", test: "commitScenario" },
+  maxSamples: 10,
+})
+```
+
+`quint test` does not provide Quint's `--mbt` instrumentation. The selected Quint test must therefore store its replay action in the state as `{ tag: string, value: record }`; point the driver at that field with `config: () => ({ nondetPath: ["replayAction"] })`. Both generation modes use the same validated ITF and replay pipeline. Test mode accepts `maxSamples`; run-only fields such as `nTraces`, `maxSteps`, `init`, `step`, invariants, witnesses, and `compiledInput` are excluded by the public TypeScript contract.
 
 `run` additionally accepts:
 

@@ -1,4 +1,4 @@
-import type { SimpleActionMap, SimpleRunOptions } from "./simple.js"
+import type { SimpleActionMap, SimpleGenerationOptions } from "./simple.js"
 import { run } from "./simple.js"
 
 const DEFAULT_TIMEOUT = 30000
@@ -6,7 +6,7 @@ const DEFAULT_TIMEOUT = 30000
 export const quintTest = <S, Actions extends SimpleActionMap>(
   testFn: (name: string, fn: () => Promise<unknown>, timeout?: number) => void,
   name: string,
-  opts: SimpleRunOptions<S, Actions>,
+  opts: SimpleGenerationOptions<S, Actions>,
   timeout?: number | undefined
 ): void => {
   testFn(name, async () => {

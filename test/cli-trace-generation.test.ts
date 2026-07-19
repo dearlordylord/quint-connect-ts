@@ -1,6 +1,7 @@
-import { Effect, Fiber } from "effect"
+import { ConfigProvider, Effect, Fiber } from "effect"
+import fc from "fast-check"
 import { EventEmitter } from "node:events"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
@@ -12,7 +13,14 @@ import {
   normalizeEvaluatorOutput,
   patchCompiledEvaluatorInput
 } from "../src/cli/compiled-evaluator-adapter.js"
-import { buildRunArgs, makeQuintCliTraceAdapter, makeRunQuintProcess } from "../src/cli/quint-cli-adapter.js"
+import {
+  buildRunArgs,
+  buildTestArgs,
+  makeQuintCliTraceAdapter,
+  makeRunQuintProcess
+} from "../src/cli/quint-cli-adapter.js"
+import { generateTraces } from "../src/cli/quint.js"
+import type { RunOptions, TestGenerationOptions, TraceGenerationOptions } from "../src/cli/run-options.js"
 import { readTraceFiles, writeTraceFiles } from "../src/cli/trace-files.js"
 
 const withTempDir = async <A>(run: (dir: string) => Promise<A>): Promise<A> => {
@@ -44,6 +52,10 @@ class FakeEvaluatorProcess extends EventEmitter {
 }
 
 const compiledInput = (source: string) => Effect.runSync(decodeCompiledEvaluatorInput(source))
+
+interface ExtendedRunOptions extends RunOptions {
+  readonly label: string
+}
 
 describe("trace file helpers", () => {
   it("writes normalized traces and reads them through the shared parser", async () => {
@@ -111,6 +123,129 @@ describe("Quint CLI trace adapter", () => {
     ])
   })
 
+  it("selects one named Quint test exactly", () => {
+    expect(buildTestArgs({
+      spec: "scenarios.qnt",
+      seed: "0x2a",
+      maxSamples: 4,
+      main: "scenarios",
+      backend: "rust",
+      generation: { mode: "test", test: "commit.test+1" }
+    }, "/tmp/traces")).toEqual([
+      "test",
+      "scenarios.qnt",
+      "--match",
+      "^commit\\.test\\+1$",
+      "--max-samples",
+      "4",
+      "--out-itf",
+      "/tmp/traces/trace_{seq}.itf.json",
+      "--verbosity",
+      "0",
+      "--backend",
+      "rust",
+      "--seed",
+      "0x2a",
+      "--main",
+      "scenarios"
+    ])
+  })
+
+  it("keeps run options extensible and rejects run-only fields in test mode", () => {
+    const acceptsGenerationOptions = (_opts: TraceGenerationOptions): boolean => true
+    const extended: ExtendedRunOptions = { spec: "counter.qnt", label: "consumer metadata" }
+
+    expect(acceptsGenerationOptions(extended)).toBe(true)
+    expect(acceptsGenerationOptions({
+      spec: "scenarios.qnt",
+      generation: { mode: "test", test: "scenario" },
+      maxSamples: 4
+    })).toBe(true)
+
+    const invalidTestOptions: TestGenerationOptions = {
+      spec: "scenarios.qnt",
+      generation: { mode: "test", test: "scenario" },
+      // @ts-expect-error nTraces is available only for quint run generation.
+      nTraces: 4
+    }
+    expect(invalidTestOptions.nTraces).toBe(4)
+  })
+
+  it("forwards an explicit Quint binary through the CLI adapter", async () => {
+    await withTempDir(async (dir) => {
+      const runQuintProcess = vi.fn(() => Effect.succeed({ exitCode: 0, stderr: "" }))
+      const adapter = makeQuintCliTraceAdapter({ runQuintProcess })
+
+      await Effect.runPromise(adapter.generate({ spec: "counter.qnt", quintBin: "/mise/bin/quint" }, dir))
+
+      expect(runQuintProcess).toHaveBeenCalledWith(
+        expect.arrayContaining(["run", "counter.qnt"]),
+        false,
+        "/mise/bin/quint"
+      )
+    })
+  })
+
+  it("selects Quint binary with options before environment before PATH", async () => {
+    const spawned: Array<{ readonly cmd: string; readonly proc: FakeProcess }> = []
+    const runQuintProcess = makeRunQuintProcess(
+      (cmd) => {
+        const proc = new FakeProcess(2000 + spawned.length)
+        spawned.push({ cmd, proc })
+        return proc
+      },
+      undefined,
+      () => ({ QUINT_BIN: "/env/bin/quint" })
+    )
+
+    const explicit = Effect.runPromise(runQuintProcess(["run", "counter.qnt"], false, "/option/bin/quint"))
+    spawned[0]?.proc.emit("close", 0)
+    await expect(explicit).resolves.toEqual({ exitCode: 0, stderr: "" })
+
+    const environment = Effect.runPromise(runQuintProcess(["run", "counter.qnt"], false))
+    spawned[1]?.proc.emit("close", 0)
+    await expect(environment).resolves.toEqual({ exitCode: 0, stderr: "" })
+
+    expect(spawned.map(({ cmd }) => cmd)).toEqual(["/option/bin/quint", "/env/bin/quint"])
+  })
+
+  it("does not fall back to npx for an explicitly missing Quint binary", async () => {
+    const spawned: Array<{ readonly cmd: string; readonly proc: FakeProcess }> = []
+    const runQuintProcess = makeRunQuintProcess((cmd) => {
+      const proc = new FakeProcess(3000 + spawned.length)
+      spawned.push({ cmd, proc })
+      return proc
+    })
+    const result = Effect.runPromise(runQuintProcess(["run", "counter.qnt"], false, "/missing/quint"))
+
+    spawned[0]?.proc.emit("error", Object.assign(new Error("missing"), { code: "ENOENT" }))
+
+    await expect(result).rejects.toThrow("Failed to start quint")
+    expect(spawned.map(({ cmd }) => cmd)).toEqual(["/missing/quint"])
+  })
+
+  it("rejects an empty QUINT_BIN before spawning", async () => {
+    const spawnProcess = vi.fn(() => new FakeProcess(4000))
+    const runQuintProcess = makeRunQuintProcess(spawnProcess, undefined, () => ({ QUINT_BIN: "" }))
+
+    await expect(Effect.runPromise(runQuintProcess(["run", "counter.qnt"], false))).rejects.toThrow(
+      "Invalid Quint executable configuration"
+    )
+    expect(spawnProcess).not.toHaveBeenCalled()
+  })
+
+  it("rejects malformed backend configuration before filesystem work", async () => {
+    await withTempDir(async (dir) => {
+      const traceDir = join(dir, "must-not-exist")
+      const program = generateTraces({ spec: "counter.qnt", traceDir }).pipe(
+        Effect.withConfigProvider(ConfigProvider.fromMap(new Map([["QUINT_BACKEND", "invalid"]])))
+      )
+
+      await expect(Effect.runPromise(program)).rejects.toThrow("Invalid QUINT_BACKEND")
+      await expect(access(traceDir)).rejects.toMatchObject({ code: "ENOENT" })
+    })
+  })
+
   it("reads generated trace files without invoking a real Quint binary", async () => {
     await withTempDir(async (dir) => {
       const runQuintProcess = vi.fn((args: ReadonlyArray<string>) => {
@@ -171,10 +306,43 @@ describe("Quint CLI trace adapter", () => {
 })
 
 describe("compiled evaluator trace adapter", () => {
+  it("never selects compiled-input evaluation for named-test mode", () => {
+    const testOptions: TestGenerationOptions = {
+      spec: "scenarios.qnt",
+      generation: { mode: "test", test: "scenario" }
+    }
+    const widened = { ...testOptions, compiledInput: "compiled.json" }
+
+    // @ts-expect-error Guard structurally widened JavaScript callers too.
+    expect(makeCompiledEvaluatorTraceAdapter().canGenerate(widened)).toBe(false)
+  })
   it("rejects malformed compiled evaluator JSON at the boundary", async () => {
     await expect(Effect.runPromise(decodeCompiledEvaluatorInput("{\"nruns\":1"))).rejects.toThrow(
       "Invalid compiled evaluator input"
     )
+  })
+
+  it("fails malformed backend configuration before starting the compiled evaluator", async () => {
+    const readCompiledInput = vi.fn(() => Effect.succeed("{}"))
+    const runEvaluator = vi.fn(() => Effect.succeed({ exitCode: 0, stderr: "", stdout: "" }))
+    const adapter = makeCompiledEvaluatorTraceAdapter({
+      compiledInputExists: () => true,
+      cpuCount: () => 1,
+      getEvaluatorPath: () => "/fake/evaluator",
+      randomSeedHex: () => "a",
+      readCompiledInput,
+      runEvaluator
+    })
+    const program = adapter.generate({
+      spec: "counter.qnt",
+      compiledInput: "compiled.json"
+    }, "/tmp").pipe(
+      Effect.withConfigProvider(ConfigProvider.fromMap(new Map([["QUINT_BACKEND", "invalid"]])))
+    )
+
+    await expect(Effect.runPromise(program.pipe(Effect.flip))).resolves.toMatchObject({ _tag: "QuintError" })
+    expect(readCompiledInput).not.toHaveBeenCalled()
+    expect(runEvaluator).not.toHaveBeenCalled()
   })
 
   it("runs the evaluator through the interruptible process boundary", async () => {
@@ -292,6 +460,39 @@ progress
         unsafe: 9007199254740993n
       }]
     }])
+  })
+
+  it("preserves arbitrary evaluator integers and strings through ITF persistence", async () => {
+    await withTempDir(async (dir) => {
+      await fc.assert(
+        fc.asyncProperty(fc.bigInt(), fc.string(), async (integer, label) => {
+          const output = JSON.stringify({
+            status: "ok",
+            bestTraces: [{
+              states: {
+                vars: ["value", "label"],
+                states: [{ value: "INTEGER_TOKEN", label }]
+              }
+            }]
+          }).replace("\"INTEGER_TOKEN\"", integer.toString())
+
+          const traces = await Effect.runPromise(normalizeEvaluatorOutput(output))
+          expect(traces).toEqual([{
+            vars: ["value", "label"],
+            states: [{ value: integer, label }]
+          }])
+
+          await Effect.runPromise(writeTraceFiles(dir, traces))
+          const persisted = JSON.parse(await readFile(join(dir, "trace_0.itf.json"), "utf-8"))
+          expect(persisted).toEqual({
+            vars: ["value", "label"],
+            states: [{ value: { "#bigint": integer.toString() }, label }]
+          })
+          await expect(Effect.runPromise(readTraceFiles(dir))).resolves.toEqual([persisted])
+        }),
+        { numRuns: 200 }
+      )
+    })
   })
 
   it.each([

@@ -17,6 +17,11 @@ import { platformProcess } from "./platform-process.js"
 import type { PlatformProcessBoundary } from "./platform-process.js"
 import type { TraceGenerationAdapter } from "./trace-adapter.js"
 import { readTraceFiles, writeTraceFiles } from "./trace-files.js"
+import {
+  isCompiledEvaluatorPolicy,
+  resolveTraceGenerationPolicy,
+  validateTraceGenerationConfiguration
+} from "./trace-generation-policy.js"
 
 interface EvaluatorResult {
   readonly stdout: string
@@ -146,17 +151,22 @@ const defaultDeps: CompiledEvaluatorAdapterDeps = {
 export const makeCompiledEvaluatorTraceAdapter = (
   deps: CompiledEvaluatorAdapterDeps = defaultDeps
 ): TraceGenerationAdapter => ({
-  canGenerate: (opts) => opts.compiledInput !== undefined && deps.compiledInputExists(opts.compiledInput),
+  canGenerate: (opts) => {
+    const policy = resolveTraceGenerationPolicy(opts)
+    return isCompiledEvaluatorPolicy(policy) && deps.compiledInputExists(policy.options.compiledInput)
+  },
   generate: (opts, outDir) =>
     Effect.gen(function*() {
-      if (opts.compiledInput === undefined) {
+      const policy = resolveTraceGenerationPolicy(opts)
+      if (!isCompiledEvaluatorPolicy(policy)) {
         return yield* new QuintError({ message: "Compiled input path is required for compiled evaluator generation" })
       }
-      const rawInput = yield* deps.readCompiledInput(opts.compiledInput)
+      yield* validateTraceGenerationConfiguration(policy.options)
+      const rawInput = yield* deps.readCompiledInput(policy.options.compiledInput)
       const compiledInput = yield* decodeCompiledEvaluatorInput(rawInput)
       const { input, seedHex } = patchCompiledEvaluatorInput(
         compiledInput,
-        opts,
+        policy.options,
         deps.cpuCount(),
         deps.randomSeedHex()
       )

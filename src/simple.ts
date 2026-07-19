@@ -3,12 +3,20 @@ import { Cause, Effect, Exit, Option, Schema } from "effect"
 import { transformITFValue } from "@firfi/itf-trace-parser"
 import type { StandardSchemaV1 } from "@standard-schema/spec"
 
-import type { RunOptions } from "./cli/quint.js"
+import type { RunOptions, TestGenerationOptions } from "./cli/quint.js"
 import type { ActionMap, AnyActionDef, Config, Driver } from "./driver/types.js"
 import { decodeStandardPicks } from "./itf/picks.js"
 import { quintRun } from "./runner/runner.js"
 
-export type { RunOptions } from "./cli/quint.js"
+export type {
+  QuintRunGeneration,
+  QuintTestGeneration,
+  RunGenerationOptions,
+  RunOptions,
+  TestGenerationOptions,
+  TraceGenerationMode,
+  TraceGenerationOptions
+} from "./cli/quint.js"
 export type { Config } from "./driver/types.js"
 export { defaultConfig } from "./driver/types.js"
 
@@ -97,6 +105,15 @@ export type SimpleRunOptions<S, Actions extends SimpleActionMap = SimpleActionMa
   & SimpleRunDriver<S, Actions>
   & SimpleRunOptionsExtra<S>
 
+export type SimpleTestOptions<S, Actions extends SimpleActionMap = SimpleActionMap> =
+  & TestGenerationOptions
+  & SimpleRunDriver<S, Actions>
+  & SimpleRunOptionsExtra<S>
+
+export type SimpleGenerationOptions<S, Actions extends SimpleActionMap = SimpleActionMap> =
+  | SimpleRunOptions<S, Actions>
+  | SimpleTestOptions<S, Actions>
+
 export function defineDriver<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   S extends Record<string, Record<string, StandardSchemaV1<any, any>>>,
@@ -164,7 +181,7 @@ const wrapDriver = <S, Actions extends SimpleActionMap>(
 }
 
 export const run = <S, Actions extends SimpleActionMap>(
-  opts: SimpleRunOptions<S, Actions>
+  opts: SimpleGenerationOptions<S, Actions>
 ): Promise<{ readonly tracesReplayed: number; readonly seed: string }> => {
   const { driver, stateCheck: sc, ...runOpts } = opts
   const program = quintRun({

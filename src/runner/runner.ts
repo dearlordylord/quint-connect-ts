@@ -1,6 +1,13 @@
 import { Array as Arr, Effect } from "effect"
-import type { QuintError, QuintNotFoundError, RunOptions } from "../cli/quint.js"
-import { generateTraces } from "../cli/quint.js"
+import type {
+  QuintError,
+  QuintNotFoundError,
+  RunOptions,
+  TestGenerationOptions,
+  TraceGenerationOptions
+} from "../cli/quint.js"
+import { resolveTraceGenerationPolicy } from "../cli/trace-generation-policy.js"
+import { TraceGeneration, traceGenerationLayer } from "../cli/trace-generation.js"
 import type { ActionMap, Config, Driver } from "../driver/types.js"
 import { defaultConfig } from "../driver/types.js"
 import type { ItfTrace } from "../itf/schema.js"
@@ -65,12 +72,12 @@ export const replayTrace = <S, E, R, Actions extends ActionMap<E, R>>(
     }
   })
 
-export type QuintRunOptions<
+interface QuintReplayOptions<
   S,
   E,
   R,
   Actions extends ActionMap<E, R> = ActionMap<E, R>
-> = RunOptions & {
+> {
   readonly driverFactory: {
     readonly create: () => Effect.Effect<Driver<S, E, R, Actions>, E, R>
   }
@@ -78,31 +85,54 @@ export type QuintRunOptions<
   readonly concurrency?: number | undefined
 }
 
+export type QuintRunOptions<
+  S,
+  E,
+  R,
+  Actions extends ActionMap<E, R> = ActionMap<E, R>
+> = RunOptions & QuintReplayOptions<S, E, R, Actions>
+
+export type QuintTestOptions<
+  S,
+  E,
+  R,
+  Actions extends ActionMap<E, R> = ActionMap<E, R>
+> = TestGenerationOptions & QuintReplayOptions<S, E, R, Actions>
+
+export type QuintGenerationOptions<
+  S,
+  E,
+  R,
+  Actions extends ActionMap<E, R> = ActionMap<E, R>
+> = QuintRunOptions<S, E, R, Actions> | QuintTestOptions<S, E, R, Actions>
+
 /** Resolve the seed. Always generates a real seed so failures are reproducible. */
-const resolveSeed = (opts: RunOptions): string => {
+const resolveSeed = (opts: TraceGenerationOptions): string => {
   return opts.seed ?? process.env["QUINT_SEED"]
     ?? `0x${Math.floor(Math.random() * 0xFFFFFFFF).toString(16).padStart(8, "0")}`
 }
 
-export const quintRun = <
+export const quintRunWithTraceGeneration = <
   S,
   E,
   R,
   Actions extends ActionMap<E, R> = ActionMap<E, R>
 >(
-  opts: QuintRunOptions<S, E, R, Actions>
+  opts: QuintGenerationOptions<S, E, R, Actions>
 ): Effect.Effect<
   { readonly tracesReplayed: number; readonly seed: string },
   E | QuintError | QuintNotFoundError | StateMismatchError | TraceReplayError | NoTracesError,
-  R
+  R | TraceGeneration
 > =>
   Effect.gen(function*() {
     const seed = resolveSeed(opts)
     const traceOpts = { ...opts, seed }
-    const traces = yield* generateTraces(traceOpts)
+    const generationPolicy = resolveTraceGenerationPolicy(traceOpts)
+    const traceGeneration = yield* TraceGeneration
+    const traces = yield* traceGeneration.generate(traceOpts)
     if (traces.length === 0) {
       return yield* new NoTracesError({
-        message: "quint run produced no traces"
+        message: `${generationPolicy.command} produced no traces`
       })
     }
 
@@ -126,3 +156,16 @@ export const quintRun = <
 
     return { tracesReplayed: results.length, seed }
   })
+
+export const quintRun = <
+  S,
+  E,
+  R,
+  Actions extends ActionMap<E, R> = ActionMap<E, R>
+>(
+  opts: QuintGenerationOptions<S, E, R, Actions>
+): Effect.Effect<
+  { readonly tracesReplayed: number; readonly seed: string },
+  E | QuintError | QuintNotFoundError | StateMismatchError | TraceReplayError | NoTracesError,
+  R
+> => quintRunWithTraceGeneration(opts).pipe(Effect.provide(traceGenerationLayer))
