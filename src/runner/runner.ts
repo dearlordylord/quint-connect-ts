@@ -42,7 +42,7 @@ export const replayTrace = <
 
     for (const [stepIndex, rawState] of trace.states.entries()) {
       const stepContext = { traceIndex, stepIndex }
-      const step = yield* decodeReplayStep(rawState, config, stepContext)
+      const step = yield* decodeReplayStep(rawState, config, stepContext, stateCheck !== undefined)
       const { action, nondetPicks } = step
       const context = actionContext(stepContext, action)
 

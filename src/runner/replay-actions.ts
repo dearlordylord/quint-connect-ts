@@ -88,16 +88,20 @@ const projectSpecState = (
     : Effect.succeed(projected)
 }
 
-/** Decode all data needed to replay and check one trace state. */
+/** Decode all data needed to dispatch and check one trace state. */
 export const decodeReplayStep = (
   state: TraceStateRecord,
   config: Config,
-  context: ReplayStepContext
+  context: ReplayStepContext,
+  includeSpecState = true
 ): Effect.Effect<ReplayStep, TraceReplayError> =>
   Effect.gen(function*() {
-    const { action, nondetPicks } = yield* extractReplayAction(state, config.nondetPath ?? [], context)
-    const specState = yield* projectSpecState(state, config.statePath ?? [], action, context)
-    return { action, nondetPicks, specState }
+    const replayAction = yield* extractReplayAction(state, config.nondetPath ?? [], context)
+    // Empty actions are interpreted by the runner before state checking.
+    const specState = includeSpecState && replayAction.action !== ""
+      ? yield* projectSpecState(state, config.statePath ?? [], replayAction.action, context)
+      : undefined
+    return { ...replayAction, specState }
   })
 
 export const buildPicksDecoder = buildEffectPicksDecoder<AnyActionDef["picks"]["fields"]>

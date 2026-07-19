@@ -88,6 +88,69 @@ describe("replay action extraction", () => {
       }
     }))
 
+  it.effect("reports malformed MBT metadata with trace and step context", () =>
+    Effect.gen(function*() {
+      const result = yield* decodeReplayStep(
+        {
+          "mbt::actionTaken": 42,
+          "mbt::nondetPicks": {}
+        },
+        defaultConfig,
+        { traceIndex: 6, stepIndex: 7 }
+      ).pipe(
+        Effect.match({
+          onFailure: (error) => error,
+          onSuccess: () => undefined
+        })
+      )
+
+      expect(result).toBeInstanceOf(TraceReplayError)
+      if (result instanceof TraceReplayError) {
+        expect(result).toMatchObject({ traceIndex: 6, stepIndex: 7, action: "unknown" })
+        expect(result.message).toContain("Failed to extract MBT metadata")
+      }
+    }))
+
+  it.effect("reports a missing custom action path with replay context", () =>
+    Effect.gen(function*() {
+      const result = yield* decodeReplayStep(
+        {},
+        { nondetPath: ["missing", "choice"] },
+        { traceIndex: 8, stepIndex: 9 }
+      ).pipe(
+        Effect.match({
+          onFailure: (error) => error,
+          onSuccess: () => undefined
+        })
+      )
+
+      expect(result).toBeInstanceOf(TraceReplayError)
+      if (result instanceof TraceReplayError) {
+        expect(result).toMatchObject({ traceIndex: 8, stepIndex: 9, action: "unknown" })
+        expect(result.message).toContain("Expected sum type {tag, value} at path missing.choice")
+      }
+    }))
+
+  it.effect("reports an invalid custom action tag with replay context", () =>
+    Effect.gen(function*() {
+      const result = yield* decodeReplayStep(
+        { choice: { tag: 42, value: {} } },
+        { nondetPath: ["choice"] },
+        { traceIndex: 10, stepIndex: 11 }
+      ).pipe(
+        Effect.match({
+          onFailure: (error) => error,
+          onSuccess: () => undefined
+        })
+      )
+
+      expect(result).toBeInstanceOf(TraceReplayError)
+      if (result instanceof TraceReplayError) {
+        expect(result).toMatchObject({ traceIndex: 10, stepIndex: 11, action: "unknown" })
+        expect(result.message).toContain("Expected sum type {tag, value} at path choice")
+      }
+    }))
+
   it.effect("adds replay context when nondetPath is not a sum type", () =>
     Effect.gen(function*() {
       const result = yield* decodeReplayStep(
@@ -746,6 +809,90 @@ describe("jsonReplacer", () => {
 // ---------------------------------------------------------------------------
 
 describe("replayTrace step 0 handling", () => {
+  it.effect("does not project configured statePath when stateCheck is absent", () =>
+    Effect.gen(function*() {
+      let dispatched = false
+      const trace: ItfTrace = {
+        vars: ["mbt::actionTaken", "mbt::nondetPicks"],
+        states: [{
+          "mbt::actionTaken": "Increment",
+          "mbt::nondetPicks": {}
+        }]
+      }
+      const driver = yield* defineDriver(
+        { Increment: {} },
+        () => ({
+          Increment: () =>
+            Effect.sync(() => {
+              dispatched = true
+            })
+        })
+      ).create()
+
+      yield* replayTrace(
+        trace,
+        0,
+        driver,
+        { statePath: ["missing", "state"] },
+        undefined,
+        "test-seed"
+      )
+
+      expect(dispatched).toBe(true)
+    }))
+
+  it.effect("skips an empty initial action before projecting checked state", () =>
+    replayTrace(
+      {
+        vars: ["mbt::actionTaken", "mbt::nondetPicks"],
+        states: [{
+          "mbt::actionTaken": "",
+          "mbt::nondetPicks": {}
+        }]
+      },
+      0,
+      { actions: {} },
+      { statePath: ["missing", "state"] },
+      stateCheck(
+        () => Effect.succeed({ count: 0n }),
+        () => true
+      ),
+      "test-seed"
+    ))
+
+  it.effect("reports a later anonymous action before projecting checked state", () =>
+    Effect.gen(function*() {
+      const driver: Driver<{ readonly count: bigint }, never, never, ActionMap<never, never>> = { actions: {} }
+      const result = yield* replayTrace(
+        {
+          vars: ["mbt::actionTaken", "mbt::nondetPicks"],
+          states: [
+            { "mbt::actionTaken": "", "mbt::nondetPicks": {} },
+            { "mbt::actionTaken": "", "mbt::nondetPicks": {} }
+          ]
+        },
+        0,
+        driver,
+        { statePath: ["missing", "state"] },
+        stateCheck(
+          () => Effect.succeed({ count: 0n }),
+          () => true
+        ),
+        "test-seed"
+      ).pipe(
+        Effect.match({
+          onFailure: (error) => error,
+          onSuccess: () => undefined
+        })
+      )
+
+      expect(result).toBeInstanceOf(TraceReplayError)
+      if (result instanceof TraceReplayError) {
+        expect(result).toMatchObject({ traceIndex: 0, stepIndex: 1, action: "" })
+        expect(result.message).toBe("Anonymous action at trace 0, step 1")
+      }
+    }))
+
   it.effect("skips step 0 when mbt::actionTaken is empty (TS backend)", () =>
     Effect.gen(function*() {
       const dispatched: Array<string> = []
