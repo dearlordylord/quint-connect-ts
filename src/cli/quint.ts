@@ -53,6 +53,10 @@ const generateTracesWithTraceDir = (
 const generateTracesWithTempDir = (
   opts: TraceGenerationOptions
 ): Effect.Effect<ReadonlyArray<ItfTrace>, QuintError | QuintNotFoundError> =>
+  // Rust parity: upstream transfers `TempDir` ownership into `Traces`, whose Drop
+  // removes it. Effect's acquire/use/release gives this API the same automatic cleanup,
+  // including failure and interruption, without requiring callers to provide a scope.
+  // https://github.com/informalsystems/quint-connect/blob/4f018f54fc7dd4cef341d10111427bab59d3b307/connect/src/trace/generator/mod.rs#L23-L33
   Effect.acquireUseRelease(
     Effect.tryPromise({
       try: () => mkdtemp(join(tmpdir(), "quint-")),

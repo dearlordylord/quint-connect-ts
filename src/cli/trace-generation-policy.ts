@@ -9,6 +9,12 @@ import {
   isQuintTestGeneration
 } from "./run-options.js"
 
+// Rust parity: upstream models `quint run` and `quint test` as distinct configs
+// implementing one command-building trait. These policies preserve that split while
+// centralizing the equivalent decision in TypeScript.
+// https://github.com/informalsystems/quint-connect/blob/4f018f54fc7dd4cef341d10111427bab59d3b307/connect/src/trace/generator/mod.rs#L16-L25
+// https://github.com/informalsystems/quint-connect/blob/4f018f54fc7dd4cef341d10111427bab59d3b307/connect/src/trace/generator/run.rs#L18-L52
+// https://github.com/informalsystems/quint-connect/blob/4f018f54fc7dd4cef341d10111427bab59d3b307/connect/src/trace/generator/test.rs#L16-L43
 // eslint-disable-next-line functional/no-mixed-types -- resolved policy combines decisions with argument construction.
 interface RunTraceGenerationPolicy {
   readonly mode: "run"
@@ -33,6 +39,11 @@ type CompiledEvaluatorPolicy = RunTraceGenerationPolicy & {
   readonly options: CompiledRunOptions
 }
 
+// TypeScript-only extension: Rust constructs the Quint command directly and has no
+// environment-selected backend. Validate this untrusted setting before either the CLI
+// or compiled evaluator starts, while an explicit API option remains authoritative.
+// Compare upstream command construction:
+// https://github.com/informalsystems/quint-connect/blob/4f018f54fc7dd4cef341d10111427bab59d3b307/connect/src/trace/generator/run.rs#L27-L52
 const BackendEnvironment = Config.literal("typescript", "rust")("QUINT_BACKEND").pipe(
   Config.withDefault("typescript")
 )
@@ -177,6 +188,10 @@ export const resolveTraceGenerationPolicy = (
   }
 }
 
+// TypeScript-only optimization: upstream Rust always builds and executes a Quint
+// command. A compiled input may bypass the CLI only for run mode, so test mode keeps
+// the same `quint test` semantics as upstream.
+// https://github.com/informalsystems/quint-connect/blob/4f018f54fc7dd4cef341d10111427bab59d3b307/connect/src/trace/generator/mod.rs#L23-L26
 export const isCompiledEvaluatorPolicy = (
   policy: TraceGenerationPolicy
 ): policy is CompiledEvaluatorPolicy => policy.mode === "run" && policy.options.compiledInput !== undefined
