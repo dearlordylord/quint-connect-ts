@@ -1,7 +1,7 @@
 import { ConfigProvider, Effect, Fiber } from "effect"
 import fc from "fast-check"
 import { EventEmitter } from "node:events"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { access, chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
@@ -19,6 +19,7 @@ import {
   makeQuintCliTraceAdapter,
   makeRunQuintProcess
 } from "../src/cli/quint-cli-adapter.js"
+import { generateTraces } from "../src/cli/quint.js"
 import type { RunOptions, TestGenerationOptions, TraceGenerationOptions } from "../src/cli/run-options.js"
 import { readTraceFiles, writeTraceFiles } from "../src/cli/trace-files.js"
 import { defaultConfig } from "../src/driver/types.js"
@@ -273,6 +274,35 @@ describe("Quint CLI trace adapter", () => {
       expect(traces[0]?.states[0]).toEqual({ counter: { "#bigint": "1" } })
     })
   })
+
+  it.skipIf(process.platform === "win32")(
+    "removes its automatic trace directory when a fake Quint process fails",
+    async () => {
+      await withTempDir(async (dir) => {
+        const fakeQuint = join(dir, "fake-quint.mjs")
+        const marker = join(dir, "trace-dir.txt")
+        await writeFile(
+          fakeQuint,
+          `#!/usr/bin/env node
+import { dirname } from "node:path"
+import { writeFileSync } from "node:fs"
+const outputPattern = process.argv[process.argv.indexOf("--out-itf") + 1]
+writeFileSync(${JSON.stringify(marker)}, dirname(outputPattern))
+process.exit(2)
+`
+        )
+        await chmod(fakeQuint, 0o755)
+
+        await expect(Effect.runPromise(generateTraces({
+          spec: "counter.qnt",
+          quintBin: fakeQuint
+        }))).rejects.toThrow("quint run failed with exit code 2")
+
+        const traceDir = await readFile(marker, "utf8")
+        await expect(access(traceDir)).rejects.toMatchObject({ code: "ENOENT" })
+      })
+    }
+  )
 
   it("ignores the original quint close after ENOENT fallback starts npx", async () => {
     const spawned: Array<{ readonly cmd: string; readonly args: ReadonlyArray<string>; readonly proc: FakeProcess }> =
