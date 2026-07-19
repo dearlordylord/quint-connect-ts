@@ -11,7 +11,7 @@ The publish checks are split by the boundary they protect. This keeps ordinary f
 - verifies the repository-pinned Quint 0.32.0 CLI and builds the package;
 - creates the current-version tarball with `pnpm pack`;
 - validates exports and the CLI bin against the files actually present in that tarball;
-- installs the tarball with pnpm's offline mode in a fresh temporary project;
+- installs the tarball with pnpm's prefer-offline mode in a fresh temporary project;
 - imports the default, Effect, Vitest, and Vitest Simple entrypoints without Zod installed;
 - runs one real trace through the explicit local `quintBin` with Effect `4.0.0-beta.99`;
 - executes the packed `intent` bin and verifies its expected missing-optional-tool diagnostic;
@@ -20,7 +20,7 @@ The publish checks are split by the boundary they protect. This keeps ordinary f
 
 The packed test deliberately avoids registry publication, `npx`, network fallback for Quint, temporary Changesets versioning, and `npm publish --dry-run`. Those operations either mutate release state or duplicate the package contents already validated from the tarball.
 
-The temporary consumer exempts only the manifest's exact `@firfi/itf-trace-parser` version from pnpm's minimum-release-age policy. The root frozen-lockfile install must already have fetched and integrity-checked that release, and the consumer install remains offline. This lets a freshly published parser prerelease pass the dependent package's release gate without disabling the age policy for unrelated packages.
+The temporary consumer exempts only the manifest's exact `@firfi/itf-trace-parser` version from pnpm's minimum-release-age policy. The root frozen-lockfile install has already fetched and integrity-checked that release; the prefer-offline consumer reuses cached content but may fetch missing registry metadata. This lets a freshly published parser prerelease pass the dependent package's release gate without disabling the age policy for unrelated packages.
 
 ## CI policy
 

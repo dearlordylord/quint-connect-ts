@@ -45,7 +45,7 @@ const installConsumer = async (consumerRoot, dependencies) => {
   }, null, 2))
   run("pnpm", [
     "install",
-    "--offline",
+    "--prefer-offline",
     "--ignore-scripts",
     "--config.auto-install-peers=false"
   ], { cwd: consumerRoot })
