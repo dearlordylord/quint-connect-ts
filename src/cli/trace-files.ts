@@ -12,7 +12,7 @@ const traceFileName = (index: number): string => `trace_${index}.itf.json`
 const stringifyItfJson = (trace: ItfTraceJson): string =>
   JSON.stringify(trace, (_key, value: unknown) => typeof value === "bigint" ? { "#bigint": String(value) } : value)
 
-export const serializeItfTrace = (trace: ItfTraceJson): Effect.Effect<string, QuintError> =>
+const serializeItfTrace = (trace: ItfTraceJson): Effect.Effect<string, QuintError> =>
   Effect.gen(function*() {
     const content = yield* Effect.try({
       try: () => stringifyItfJson(trace),

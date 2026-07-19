@@ -1,7 +1,7 @@
 import { Effect, Predicate, Schema } from "effect"
 
 import { QuintError } from "./errors.js"
-import { type ItfTraceJson, serializeItfTrace } from "./trace-files.js"
+import type { ItfTraceJson } from "./trace-files.js"
 
 interface JsonParseContext {
   readonly source?: unknown
@@ -76,7 +76,5 @@ export const normalizeEvaluatorOutput = (
       ...(!Object.hasOwn(states, "#meta") ? {} : { "#meta": states["#meta"] })
     }))
 
-    // Validate the complete batch before the adapter persists its first trace.
-    yield* Effect.forEach(traces, serializeItfTrace)
     return traces
   })
