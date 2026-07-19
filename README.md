@@ -153,6 +153,8 @@ console.log(result.tracesReplayed, result.seed)
 
 No `Effect.scoped` or `Effect.provide` needed — resource management and Node.js services are handled internally.
 
+Action-pick schemas and schemas passed to `ItfOption` must be service-free codecs. Decoding happens inside the driver boundary, which does not accept a layer for schema services.
+
 See [examples/counter/counter-effect.test.ts](examples/counter/counter-effect.test.ts) for a complete runnable vitest example.
 
 ### Vitest Helpers
