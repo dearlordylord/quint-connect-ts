@@ -1,14 +1,374 @@
 import { describe, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Layer, Predicate, Schema } from "effect"
 import { expect } from "vitest"
 
-import { ITFBigInt } from "../src/itf/schema.js"
+import { ITFBigInt } from "@firfi/itf-trace-parser/effect"
 
 import { defaultConfig } from "../src/driver/types.js"
-import type { Driver, PartialActionMap } from "../src/driver/types.js"
-import { defineDriver, stateCheck } from "../src/effect.js"
+import type { ActionMap, Driver } from "../src/driver/types.js"
+import { defineDriver, stateCheck, TraceGeneration } from "../src/effect.js"
 import type { ItfTrace } from "../src/itf/schema.js"
-import { jsonReplacer, replayTrace, StateMismatchError, stripMetadata, TraceReplayError } from "../src/runner/runner.js"
+import { decodeReplayStep } from "../src/runner/replay-actions.js"
+import { dispatchReplayAction } from "../src/runner/replay-dispatch.js"
+import { actionContext, stateMismatchError } from "../src/runner/replay-errors.js"
+import {
+  jsonReplacer,
+  NoTracesError,
+  quintRunWithTraceGeneration,
+  replayTrace,
+  StateMismatchError,
+  stripMetadata,
+  TraceReplayError
+} from "../src/runner/runner.js"
+
+describe("trace generation service orchestration", () => {
+  it.effect("generates and replays through an in-memory service without subprocesses or files", () =>
+    Effect.gen(function*() {
+      const generatedWith: Array<{ readonly spec: string; readonly seed: string | undefined }> = []
+      const dispatched: Array<bigint> = []
+      const traceGeneration = Layer.succeed(
+        TraceGeneration,
+        TraceGeneration.of({
+          generate: (opts) => {
+            generatedWith.push({ spec: opts.spec, seed: opts.seed })
+            return Effect.succeed([{
+              vars: ["count", "mbt::actionTaken", "mbt::nondetPicks"],
+              states: [{
+                count: { "#bigint": "4" },
+                "mbt::actionTaken": "Increment",
+                "mbt::nondetPicks": {
+                  amount: { tag: "Some", value: { "#bigint": "4" } }
+                }
+              }]
+            }])
+          }
+        })
+      )
+
+      const result = yield* quintRunWithTraceGeneration({
+        spec: "in-memory.qnt",
+        seed: "0x2a",
+        driverFactory: defineDriver(
+          { Increment: { amount: ITFBigInt } },
+          () => ({
+            Increment: ({ amount }) =>
+              Effect.sync(() => {
+                dispatched.push(amount)
+              })
+          })
+        )
+      }).pipe(Effect.provide(traceGeneration))
+
+      expect(result).toEqual({ tracesReplayed: 1, seed: "0x2a" })
+      expect(generatedWith).toEqual([{ spec: "in-memory.qnt", seed: "0x2a" }])
+      expect(dispatched).toEqual([4n])
+    }))
+
+  it.effect("identifies an empty named-test generation result", () =>
+    Effect.gen(function*() {
+      const traceGeneration = Layer.succeed(
+        TraceGeneration,
+        TraceGeneration.of({ generate: () => Effect.succeed([]) })
+      )
+
+      const error = yield* quintRunWithTraceGeneration({
+        spec: "in-memory.qnt",
+        generation: { mode: "test", test: "scenario" },
+        seed: "1",
+        driverFactory: defineDriver({}, () => ({}))
+      }).pipe(
+        Effect.provide(traceGeneration),
+        Effect.flip
+      )
+
+      expect(error).toBeInstanceOf(NoTracesError)
+      if (error instanceof NoTracesError) {
+        expect(error.message).toBe("quint test produced no traces")
+      }
+    }))
+})
+
+describe("replay action extraction", () => {
+  it.effect("decodes an MBT replay step with stripped projected state", () =>
+    Effect.gen(function*() {
+      const step = yield* decodeReplayStep(
+        {
+          "#meta": { index: 1 },
+          "mbt::actionTaken": "Increment",
+          "mbt::nondetPicks": {
+            amount: { tag: "Some", value: { "#bigint": "7" } }
+          },
+          count: { "#bigint": "7" }
+        },
+        defaultConfig,
+        { traceIndex: 2, stepIndex: 1 }
+      )
+
+      expect(step.action).toBe("Increment")
+      expect(step.nondetPicks.get("amount")).toEqual({ tag: "Some", value: { "#bigint": "7" } })
+      expect(step.specState).toEqual({ count: { "#bigint": "7" } })
+    }))
+
+  it.effect("decodes custom action and state paths into one replay step", () =>
+    Effect.gen(function*() {
+      const step = yield* decodeReplayStep(
+        {
+          envelope: {
+            choice: {
+              tag: "Move",
+              value: { from: "a", to: "b" }
+            },
+            state: { position: "b" }
+          }
+        },
+        {
+          nondetPath: ["envelope", "choice"],
+          statePath: ["envelope", "state"]
+        },
+        { traceIndex: 3, stepIndex: 4 }
+      )
+
+      expect(step).toEqual({
+        action: "Move",
+        nondetPicks: new Map([
+          ["from", { tag: "Some", value: "a" }],
+          ["to", { tag: "Some", value: "b" }]
+        ]),
+        specState: { position: "b" }
+      })
+    }))
+
+  it.effect("reports a missing configured state path with replay context", () =>
+    Effect.gen(function*() {
+      const result = yield* decodeReplayStep(
+        {
+          choice: { tag: "Move", value: {} }
+        },
+        {
+          nondetPath: ["choice"],
+          statePath: ["missing", "state"]
+        },
+        { traceIndex: 5, stepIndex: 6 }
+      ).pipe(
+        Effect.match({
+          onFailure: (error) => error,
+          onSuccess: () => undefined
+        })
+      )
+
+      expect(result).toBeInstanceOf(TraceReplayError)
+      if (result instanceof TraceReplayError) {
+        expect(result).toMatchObject({ traceIndex: 5, stepIndex: 6, action: "Move" })
+        expect(result.message).toContain("Expected state at path missing.state")
+      }
+    }))
+
+  it.effect("reports malformed MBT metadata with trace and step context", () =>
+    Effect.gen(function*() {
+      const result = yield* decodeReplayStep(
+        {
+          "mbt::actionTaken": 42,
+          "mbt::nondetPicks": {}
+        },
+        defaultConfig,
+        { traceIndex: 6, stepIndex: 7 }
+      ).pipe(
+        Effect.match({
+          onFailure: (error) => error,
+          onSuccess: () => undefined
+        })
+      )
+
+      expect(result).toBeInstanceOf(TraceReplayError)
+      if (result instanceof TraceReplayError) {
+        expect(result).toMatchObject({ traceIndex: 6, stepIndex: 7, action: "unknown" })
+        expect(result.message).toContain("Failed to extract MBT metadata")
+      }
+    }))
+
+  it.effect("reports a missing custom action path with replay context", () =>
+    Effect.gen(function*() {
+      const result = yield* decodeReplayStep(
+        {},
+        { nondetPath: ["missing", "choice"] },
+        { traceIndex: 8, stepIndex: 9 }
+      ).pipe(
+        Effect.match({
+          onFailure: (error) => error,
+          onSuccess: () => undefined
+        })
+      )
+
+      expect(result).toBeInstanceOf(TraceReplayError)
+      if (result instanceof TraceReplayError) {
+        expect(result).toMatchObject({ traceIndex: 8, stepIndex: 9, action: "unknown" })
+        expect(result.message).toContain("Expected sum type {tag, value} at path missing.choice")
+      }
+    }))
+
+  it.effect("reports an invalid custom action tag with replay context", () =>
+    Effect.gen(function*() {
+      const result = yield* decodeReplayStep(
+        { choice: { tag: 42, value: {} } },
+        { nondetPath: ["choice"] },
+        { traceIndex: 10, stepIndex: 11 }
+      ).pipe(
+        Effect.match({
+          onFailure: (error) => error,
+          onSuccess: () => undefined
+        })
+      )
+
+      expect(result).toBeInstanceOf(TraceReplayError)
+      if (result instanceof TraceReplayError) {
+        expect(result).toMatchObject({ traceIndex: 10, stepIndex: 11, action: "unknown" })
+        expect(result.message).toContain("Expected sum type {tag, value} at path choice")
+      }
+    }))
+
+  it.effect("adds replay context when nondetPath is not a sum type", () =>
+    Effect.gen(function*() {
+      const result = yield* decodeReplayStep(
+        { envelope: { choice: { value: {} } } },
+        { nondetPath: ["envelope", "choice"] },
+        { traceIndex: 4, stepIndex: 5 }
+      ).pipe(
+        Effect.match({
+          onFailure: (e) => e,
+          onSuccess: () => undefined
+        })
+      )
+
+      expect(result).toBeInstanceOf(TraceReplayError)
+      if (result instanceof TraceReplayError) {
+        expect(result.traceIndex).toBe(4)
+        expect(result.stepIndex).toBe(5)
+        expect(result.action).toBe("unknown")
+        expect(result.message).toContain("Expected sum type {tag, value}")
+      }
+    }))
+})
+
+describe("replay dispatch helper", () => {
+  it.effect("decodes picks and dispatches an action handler", () =>
+    Effect.gen(function*() {
+      const dispatched: Array<bigint> = []
+      const factory = defineDriver(
+        { Increment: { amount: ITFBigInt } },
+        () => ({
+          Increment: ({ amount }) =>
+            Effect.sync(() => {
+              dispatched.push(amount)
+            })
+        })
+      )
+      const driver = yield* factory.create()
+
+      const result = yield* dispatchReplayAction(
+        driver.actions,
+        "Increment",
+        new Map([["amount", { tag: "Some", value: { "#bigint": "7" } }]]),
+        actionContext({ traceIndex: 0, stepIndex: 1 }, "Increment"),
+        undefined
+      )
+
+      expect(result).toBe("dispatched")
+      expect(dispatched).toEqual([7n])
+    }))
+
+  it.effect("dispatches raw nondetPath picks after extraction normalizes them", () =>
+    Effect.gen(function*() {
+      const dispatched: Array<string> = []
+      const factory = defineDriver(
+        { Move: { from: Schema.String } },
+        () => ({
+          Move: ({ from }) =>
+            Effect.sync(() => {
+              dispatched.push(from)
+            })
+        })
+      )
+      const driver = yield* factory.create()
+      const replayAction = yield* decodeReplayStep(
+        {
+          choice: {
+            tag: "Move",
+            value: { from: "a" }
+          }
+        },
+        { nondetPath: ["choice"] },
+        { traceIndex: 0, stepIndex: 1 }
+      )
+
+      const result = yield* dispatchReplayAction(
+        driver.actions,
+        replayAction.action,
+        replayAction.nondetPicks,
+        actionContext({ traceIndex: 0, stepIndex: 1 }, replayAction.action),
+        undefined
+      )
+
+      expect(result).toBe("dispatched")
+      expect(dispatched).toEqual(["a"])
+    }))
+
+  it.effect("preserves documented no-op step missing-action skip", () =>
+    Effect.gen(function*() {
+      const emptyActions: ActionMap<never, never> = {}
+      const noOpResult = yield* dispatchReplayAction(
+        emptyActions,
+        "step",
+        new Map(),
+        actionContext({ traceIndex: 0, stepIndex: 3 }, "step"),
+        undefined
+      )
+
+      expect(noOpResult).toBe("skipped")
+    }))
+
+  it.effect("errors for missing non-empty action handler at step 0", () =>
+    Effect.gen(function*() {
+      const emptyActions: ActionMap<never, never> = {}
+
+      const result = yield* dispatchReplayAction(
+        emptyActions,
+        "Init",
+        new Map(),
+        actionContext({ traceIndex: 0, stepIndex: 0 }, "Init"),
+        undefined
+      ).pipe(
+        Effect.match({
+          onFailure: (e) => e,
+          onSuccess: () => undefined
+        })
+      )
+
+      expect(result).toBeInstanceOf(TraceReplayError)
+      if (result instanceof TraceReplayError) {
+        expect(result.message).toBe("Unknown action: Init")
+        expect(result.traceIndex).toBe(0)
+        expect(result.stepIndex).toBe(0)
+        expect(result.action).toBe("Init")
+      }
+    }))
+})
+
+describe("replay error context helpers", () => {
+  it("builds state mismatch messages with action context and bigint-safe JSON", () => {
+    const error = stateMismatchError(
+      actionContext({ traceIndex: 3, stepIndex: 4 }, "Move"),
+      "seed-123",
+      { count: 1n },
+      { count: 2n }
+    )
+
+    expect(error).toBeInstanceOf(StateMismatchError)
+    expect(error.message).toContain("trace 3, step 4, action \"Move\"")
+    expect(error.message).toContain("seed-123")
+    expect(error.message).toContain("1n")
+    expect(error.message).toContain("2n")
+  })
+})
 
 // ---------------------------------------------------------------------------
 // T1a: stripMetadata
@@ -128,7 +488,10 @@ describe("replayTrace with module-qualified state keys", () => {
       )
 
       expect(receivedRaws.length).toBe(1)
-      const received = receivedRaws[0] as Record<string, unknown>
+      const received = receivedRaws[0]
+      if (!Predicate.isObject(received)) {
+        throw new Error("expected a record state")
+      }
       expect(Object.keys(received)).toContain("counter_inner::count")
       expect(Object.keys(received)).not.toContain("#meta")
       expect(Object.keys(received)).not.toContain("mbt::actionTaken")
@@ -258,7 +621,10 @@ describe("replayTrace with statePath through qualified key", () => {
       )
 
       expect(receivedRaws.length).toBe(1)
-      const received = receivedRaws[0] as Record<string, unknown>
+      const received = receivedRaws[0]
+      if (!Predicate.isObject(received)) {
+        throw new Error("expected a record state")
+      }
       // deserializeState should receive the inner record, not the qualified key
       expect(Object.keys(received)).toContain("count")
       expect(Object.keys(received)).toContain("label")
@@ -357,7 +723,7 @@ describe("replayTrace unknown action error messages (T1b)", () => {
     ]
   })
 
-  const emptyDriver: Driver<unknown, never, never, PartialActionMap> = {
+  const emptyDriver: Driver<unknown, never, never, ActionMap<never, never>> = {
     actions: {}
   }
 
@@ -518,6 +884,90 @@ describe("jsonReplacer", () => {
 // ---------------------------------------------------------------------------
 
 describe("replayTrace step 0 handling", () => {
+  it.effect("does not project configured statePath when stateCheck is absent", () =>
+    Effect.gen(function*() {
+      let dispatched = false
+      const trace: ItfTrace = {
+        vars: ["mbt::actionTaken", "mbt::nondetPicks"],
+        states: [{
+          "mbt::actionTaken": "Increment",
+          "mbt::nondetPicks": {}
+        }]
+      }
+      const driver = yield* defineDriver(
+        { Increment: {} },
+        () => ({
+          Increment: () =>
+            Effect.sync(() => {
+              dispatched = true
+            })
+        })
+      ).create()
+
+      yield* replayTrace(
+        trace,
+        0,
+        driver,
+        { statePath: ["missing", "state"] },
+        undefined,
+        "test-seed"
+      )
+
+      expect(dispatched).toBe(true)
+    }))
+
+  it.effect("skips an empty initial action before projecting checked state", () =>
+    replayTrace(
+      {
+        vars: ["mbt::actionTaken", "mbt::nondetPicks"],
+        states: [{
+          "mbt::actionTaken": "",
+          "mbt::nondetPicks": {}
+        }]
+      },
+      0,
+      { actions: {} },
+      { statePath: ["missing", "state"] },
+      stateCheck(
+        () => Effect.succeed({ count: 0n }),
+        () => true
+      ),
+      "test-seed"
+    ))
+
+  it.effect("reports a later anonymous action before projecting checked state", () =>
+    Effect.gen(function*() {
+      const driver: Driver<{ readonly count: bigint }, never, never, ActionMap<never, never>> = { actions: {} }
+      const result = yield* replayTrace(
+        {
+          vars: ["mbt::actionTaken", "mbt::nondetPicks"],
+          states: [
+            { "mbt::actionTaken": "", "mbt::nondetPicks": {} },
+            { "mbt::actionTaken": "", "mbt::nondetPicks": {} }
+          ]
+        },
+        0,
+        driver,
+        { statePath: ["missing", "state"] },
+        stateCheck(
+          () => Effect.succeed({ count: 0n }),
+          () => true
+        ),
+        "test-seed"
+      ).pipe(
+        Effect.match({
+          onFailure: (error) => error,
+          onSuccess: () => undefined
+        })
+      )
+
+      expect(result).toBeInstanceOf(TraceReplayError)
+      if (result instanceof TraceReplayError) {
+        expect(result).toMatchObject({ traceIndex: 0, stepIndex: 1, action: "" })
+        expect(result.message).toBe("Anonymous action at trace 0, step 1")
+      }
+    }))
+
   it.effect("skips step 0 when mbt::actionTaken is empty (TS backend)", () =>
     Effect.gen(function*() {
       const dispatched: Array<string> = []
@@ -609,6 +1059,51 @@ describe("replayTrace step 0 handling", () => {
 
       // Both steps dispatched including step 0
       expect(dispatched).toEqual(["Init(A)", "Increment(5)"])
+    }))
+
+  it.effect("errors on unmapped non-empty step 0 action", () =>
+    Effect.gen(function*() {
+      let stateChecks = 0
+
+      const trace: ItfTrace = {
+        vars: ["count", "mbt::actionTaken", "mbt::nondetPicks"],
+        states: [
+          {
+            "#meta": { index: 0 },
+            "mbt::actionTaken": "Init",
+            "mbt::nondetPicks": {},
+            count: { "#bigint": "0" }
+          }
+        ]
+      }
+      const emptyDriver: Driver<{ readonly count: bigint }, never, never, ActionMap<never, never>> = { actions: {} }
+
+      const result = yield* replayTrace(
+        trace,
+        0,
+        emptyDriver,
+        defaultConfig,
+        stateCheck(
+          (raw) => Schema.decodeUnknownEffect(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie),
+          () => {
+            stateChecks += 1
+            return true
+          }
+        ),
+        "test-seed"
+      ).pipe(
+        Effect.match({
+          onFailure: (e) => e,
+          onSuccess: () => undefined
+        })
+      )
+
+      expect(result).toBeInstanceOf(TraceReplayError)
+      if (result instanceof TraceReplayError) {
+        expect(result.message).toBe("Unknown action: Init")
+        expect(result.stepIndex).toBe(0)
+      }
+      expect(stateChecks).toBe(0)
     }))
 
   it.effect("runs state comparison at step 0 when action is present", () =>

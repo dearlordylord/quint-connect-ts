@@ -1,12 +1,18 @@
 # @firfi/quint-connect
 
-## 1.0.0-effect4.6
+## 2.0.2-effect4.0
+
+### Patch Changes
+
+- Restore feature and package parity with the Effect 3 release line while upgrading the Effect 4 prerelease to `4.0.0-beta.99`.
+
+## 2.0.1
 
 ### Patch Changes
 
 - Improve trace replay error serialization for `Map` and `Set` values in state mismatch diagnostics.
 
-## 1.0.0-effect4.5
+## 2.0.0
 
 ### Major Changes
 
@@ -14,49 +20,103 @@
 
   This is a breaking runtime compatibility change for users running older Quint CLI versions that only support `--invariant` and `--witness`.
 
-## 1.0.0-effect4.4
+## 1.0.0
+
+### Major Changes
+
+- d8c0327: Make typed action dispatch the primary driver API.
+
+  The public `Driver` shape is now action-map first and no longer exposes raw `step` dispatch. The simple `defineDriver(factory)` raw-mode overload and `pickFrom` export have been removed; define actions with per-field schemas and handlers instead.
+
+## 0.8.2
+
+### Patch Changes
+
+- Fix zombie evaluator processes and seed patching for compiled input
+
+  - Register `process.on("exit")` handlers in both `runEvaluatorDirect` and `runQuintProcess` to kill the evaluator process group on any exit (timeout, SIGKILL, OOM) — not just Effect fiber interrupt
+  - Fix seed patching for compiled-input path: inject seed field when it's missing from the cached JSON instead of silently skipping
+  - Add `warnZombieEvaluators()` at the start of `generateTraces` — warns if running `quint_evaluator` processes are detected
+
+## 0.8.0
 
 ### Minor Changes
 
-- Remove @effect/platform-node dependency, eliminating transitive peer dep chain
+- c347238: Add `compiledInput` option for cached spec evaluation
+
+  New `compiledInput` field on `RunOptions` accepts a path to a pre-compiled evaluator input JSON file. When provided and the file exists, `quint run`'s 15s+ parse/typecheck is skipped entirely — the compiled input is fed directly to the Rust evaluator via stdin pipe.
+
+  Other changes:
+
+  - Try `quint` directly before falling back to `npx @informalsystems/quint` (~3s faster when globally installed, logs warning on fallback)
+  - Kill entire process group on cancellation (`detached: true` + `SIGKILL` to process group) to prevent zombie `quint_evaluator` processes
+  - `QUINT_EVALUATOR_VERSION` env var to pin a specific evaluator version
+  - `#bigint` ITF encoding for trace output compatibility with `@firfi/itf-trace-parser`
+
+## 0.7.2
+
+### Patch Changes
+
+- 470c9cc: Don't force --seed when user doesn't specify one. Without --seed, quint uses fresh random seeds per sample, giving much better coverage for specs with many phase-guarded actions. The generated seed is still reported in error messages for reproducibility.
+- 2e8f9ac: Always pass seed to quint for reproducible failures
+
+## 0.7.1
+
+### Patch Changes
+
+- Update README: remove @effect/platform-node from install, update vitest helper examples
+
+## 0.7.0
+
+### Minor Changes
+
+- Remove @effect/platform and @effect/platform-node dependencies, eliminating 23 transitive packages (cluster, rpc, sql, experimental, etc.)
 
   BREAKING CHANGES:
 
   - `quintTest` and `quintIt` now take the test function as the first argument:
     - `quintTest(test, name, opts)` instead of `quintTest(name, opts)`
     - `quintIt(it.effect, name, opts)` instead of `quintIt(name, opts)`
-  - `quintRun` no longer requires `FileSystem | Path | ChildProcessSpawner` in its Effect requirements type
+  - `quintRun` no longer requires `FileSystem | Path | CommandExecutor` in its Effect requirements type
 
   Other changes:
 
   - CLI subprocess handling rewritten to use Node.js APIs directly (child_process, fs/promises)
-  - Added child process cleanup via AbortSignal for interruption safety
+  - Added child process cleanup finalizer for interruption safety
   - Rust backend "step" action (no-op) now silently skipped in typed driver mode
-  - Removed all unnecessary `Effect.scoped` and `Effect.provide(NodeServices.layer)` wrappers
+  - Removed all unnecessary `Effect.scoped` wrappers
 
-## 1.0.0-effect4.3
+## 0.6.3
 
 ### Patch Changes
 
-- Fix broken dist: compiled JS/d.ts files referenced `@effect/platform/*` (Effect v3 paths) instead of `effect/*` (Effect v4). Caused runtime `Cannot find module` errors and type degradation for consumers.
+- a63d0c1: llm skills
 
-## 1.0.0-effect4.2
+## 0.6.2
+
+### Patch Changes
+
+- 58163a4: skills
+
+## 0.6.1
+
+### Patch Changes
+
+- 2d86603: llm skills
+
+## 0.6.0
 
 ### Minor Changes
 
-- Remove onInit hook, dispatch step 0 as regular action (Rust quint-connect parity). BREAKING: `onInit` removed from Driver, defineDriver, and SimpleDriver.
+- 91989ed: Remove onInit hook, dispatch step 0 as regular action (Rust quint-connect parity)
 
-## 1.0.0-effect4.1
+  BREAKING: `onInit` removed from Driver, defineDriver, and SimpleDriver. Step 0 is now dispatched as a regular action. With TS backend, step 0 is silently skipped when handler is missing. With Rust backend, define an init handler in your action map.
 
-### Patch Changes
+## 0.5.0
 
-- 5953c01: add init method
+### Minor Changes
 
-## 1.0.0-effect4.0
-
-### Major Changes
-
-- ee05414: Migrate to Effect 4 beta. Upgrade effect, @effect/platform-node, and @effect/vitest to ^4.0.0-beta.31. Remove @effect/platform (merged into effect core). Add local Effect 4 compatible ITF schemas.
+- 6a8841e: add init method
 
 ## 0.4.2
 

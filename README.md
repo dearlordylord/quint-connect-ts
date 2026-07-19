@@ -13,7 +13,7 @@
 
 Model-based testing framework connecting [Quint](https://github.com/informalsystems/quint) specifications to TypeScript implementations. The TypeScript equivalent of [quint-connect](https://github.com/informalsystems/quint-connect) (Rust).
 
-Spawns `quint run --mbt`, parses ITF traces, replays them through a user-implemented driver, and optionally compares spec state against implementation state after every step.
+Spawns `quint run --mbt` or one exact named `quint test`, parses ITF traces, replays them through a user-implemented driver, and optionally compares spec state against implementation state after every step.
 
 ## Install
 
@@ -24,14 +24,16 @@ pnpm add @firfi/quint-connect
 # If using Zod ITF schemas (ITFBigInt, ITFSet, ITFMap) — requires Zod 4+:
 pnpm add zod
 
-# For Effect API:
-pnpm add @firfi/quint-connect effect
+# For the Effect 4 prerelease API (npm latest remains on Effect 3):
+pnpm add @firfi/quint-connect@effect4 effect@4.0.0-beta.99
 
 # For Effect vitest helper (quintIt):
-pnpm add -D @effect/vitest
+pnpm add -D @effect/vitest@4.0.0-beta.99
 ```
 
-**Requirements:** Node.js 21+ (for `import.meta.dirname`), ESM (`"type": "module"` in package.json), [Quint CLI](https://github.com/informalsystems/quint) (`npx @informalsystems/quint` runs without global install).
+The `effect4` prerelease line targets Effect `4.0.0-beta.99`. The untagged `latest` package continues to distribute the Effect 3 build.
+
+**Requirements:** Node.js 22+ (for lossless evaluator JSON decoding), ESM (`"type": "module"` in package.json), [Quint CLI](https://github.com/informalsystems/quint) (`npx @informalsystems/quint` runs without global install).
 
 ## Usage
 
@@ -66,10 +68,11 @@ const result = await run({
   maxSteps: 20,
   seed: "1",
   driver: defineDriver(
-    { Increment: { amount: ITFBigInt } },
+    { init: {}, Increment: { amount: ITFBigInt } },
     () => {
       let count = 0n
       return {
+        init: () => {},
         Increment: ({ amount }) => {       // amount: bigint — inferred from schema
           count += amount
         },
@@ -125,10 +128,11 @@ const result = await Effect.runPromise(
     maxSteps: 20,
     seed: "1",
     driverFactory: defineDriver(
-      { Increment: { amount: ITFBigInt } },
+      { init: {}, Increment: { amount: ITFBigInt } },
       () => {
         let count = 0n
         return {
+          init: () => Effect.void,
           Increment: ({ amount }) =>         // bigint — inferred from schema
             Effect.sync(() => {
               count += amount
@@ -184,8 +188,6 @@ The first argument is the test function from your own vitest/`@effect/vitest` in
 ### Simple API (`@firfi/quint-connect`)
 
 - **`defineDriver(schema, factory)`** — define a typed driver with per-field Standard Schema picks. `schema` maps action names to `{ fieldName: StandardSchema }`. `factory` returns handlers (with inferred pick types) + optional `getState`/`config`. Compile error if a handler is missing. Actions with no `nondet` picks use an empty schema: `{ Toggle: {} }`.
-- **`defineDriver(factory)`** — define a raw driver. `factory` returns `{ step, getState?, config? }`. See [Raw mode](#raw-mode).
-- **`pickFrom(nondetPicks, key, schema)`** — extract a single pick from raw nondet picks: unwrap Quint Option, transform ITF value, validate with Standard Schema. Returns `T | undefined`.
 - **`stateCheck(deserialize, compare)`** — helper that infers the state type from `deserialize` and contextually types `compare`'s parameters. Needed because TypeScript cannot infer generic type parameters across sibling callbacks in an object literal.
 - **`run(opts)`** — generate traces and replay them through a driver. Returns `Promise<{ tracesReplayed, seed }>`.
 
@@ -194,6 +196,7 @@ The first argument is the test function from your own vitest/`@effect/vitest` in
 - **`defineDriver(schema, factory)`** — define a driver with per-field Effect Schema picks. Same shape as simple API but handlers return `Effect`.
 - **`stateCheck(deserialize, compare)`** — same as simple API but `deserialize` returns `Effect<S>`.
 - **`quintRun(opts)`** — generate traces via `quint run --mbt` and replay them through a driver. Returns `Effect<{ tracesReplayed, seed }>`.
+- **`quintRunWithTraceGeneration(opts)`** — the injectable orchestration variant. It requires the `TraceGeneration` Effect service; provide a fake layer to test generation and replay without subprocesses or files.
 - **`generateTraces(opts)`** — just spawn quint and parse ITF traces without replaying.
 - **`ItfOption(schema)`** — Effect Schema that decodes Quint's Option variant to `A | undefined`.
 - **`ITFBigInt`**, **`ITFSet(item)`**, **`ITFMap(key, value)`** — ITF type schemas.
@@ -205,31 +208,45 @@ Shared by `run`, `quintRun`, and `generateTraces`:
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `spec` | `string` | *required* | Path to the `.qnt` spec file |
+| `generation` | `{ mode: "test", test: string }` | `{ mode: "run" }` | Generate replay traces from exactly one named Quint test instead of `quint run --mbt`. |
 | `seed` | `string` | random | RNG seed for reproducible runs. Must be a big integer: decimal (`"42"`) or hex (`"0x138ff8c9"`). Also reads `QUINT_SEED` env var as fallback. When omitted, a random hex seed is generated and returned in `result.seed` for reproducibility. |
-| `nTraces` | `number` | `10` | Number of traces to generate |
-| `maxSteps` | `number` | quint default | Maximum steps per trace |
-| `maxSamples` | `number` | quint default | Maximum samples before giving up on finding a valid step |
-| `init` | `string` | quint default | Name of the init action |
-| `step` | `string` | quint default | Name of the step action |
+| `nTraces` | `number` | `10` | Run mode only: number of simulation traces to generate |
+| `maxSteps` | `number` | quint default | Run mode only: maximum steps per trace |
+| `maxSamples` | `number` | run: quint default; test: `10` | Run mode: maximum samples before giving up on a valid step. Test mode: successful randomized test executions requested from Quint. |
+| `init` | `string` | quint default | Run mode only: name of the init action |
+| `step` | `string` | quint default | Run mode only: name of the step action |
 | `main` | `string` | quint default | Name of the main module. Required when the `.qnt` file contains multiple modules. |
 | `backend` | `"typescript" \| "rust"` | `"typescript"` | Simulation backend. TypeScript works out of the box; `"rust"` requires the Rust evaluator. |
-| `invariants` | `string[]` | — | Invariant names to check during simulation |
-| `witnesses` | `string[]` | — | Witness names to report |
+| `invariants` | `string[]` | — | Run mode only: invariant names to check during simulation |
+| `witnesses` | `string[]` | — | Run mode only: witness names to report |
 | `verbose` | `boolean` | `false` | Sets `QUINT_VERBOSE=true`. Quint logs detailed simulation output to stderr. |
 | `traceDir` | `string` | temp dir | Directory to write ITF trace files. Files are kept after run. Useful for debugging — inspect generated traces when a test fails. |
+| `compiledInput` | `string` | — | Run mode only: path to Quint's compiled Rust evaluator input. When present and readable, replay uses the compiled evaluator directly. |
+
+Named-test mode uses an escaped, anchored `quint test --match` expression, so only the requested test runs:
+
+```ts
+quintRun({
+  ...options,
+  generation: { mode: "test", test: "commitScenario" },
+  maxSamples: 10,
+})
+```
+
+`quint test` does not provide Quint's `--mbt` instrumentation. The selected Quint run must therefore store its replay action in the state as `{ tag: string, value: record }`; point the driver at that field with `config: () => ({ nondetPath: ["replayAction"] })`. Both generation modes then use the same validated ITF and replay pipeline. Test mode accepts `maxSamples`; run-only fields such as `nTraces`, `maxSteps`, `init`, `step`, invariants, witnesses, and `compiledInput` are excluded by the public TypeScript contract.
 
 `run` additionally accepts:
 
 | Field | Type | Description |
 |---|---|---|
-| `driver` | `() => SimpleDriver<State>` | Creates a fresh driver per trace. Use `defineDriver` to create. |
+| `driver` | `() => SimpleDriver<State>` | Creates a fresh action-map driver per trace. Use `defineDriver` to create. |
 | `stateCheck` | `stateCheck(deserialize, compare)` | Optional. Compare spec vs impl state after each step. Use `stateCheck()` helper for type inference. |
 
 `quintRun` additionally accepts:
 
 | Field | Type | Description |
 |---|---|---|
-| `driverFactory` | `{ create: () => Effect<Driver<S, E, R>> }` | Creates a fresh driver per trace. Use `defineDriver` to create. |
+| `driverFactory` | `{ create: () => Effect<Driver<S, E, R>> }` | Creates a fresh action-map driver per trace. Use `defineDriver` to create. |
 | `stateCheck` | `stateCheck(deserialize, compare)` | Optional. Compare spec vs impl state after each step. Use `stateCheck()` helper for type inference. |
 
 ### Config
@@ -255,13 +272,13 @@ When using `statePath`, both `deserializeState` and `getState` should work with 
 
 Step 0 (the init state) is processed like any other action, matching the Rust [quint-connect](https://github.com/informalsystems/quint-connect) behavior. The `mbt::actionTaken` field determines the action name.
 
-With the **Rust backend** (`backend: "rust"`), init has a proper action name (e.g. `"Init"`) — define it in your action map or handle it in `step()`. State comparison runs at step 0 too.
+With the **Rust backend** (`backend: "rust"`), init has a proper action name (e.g. `"Init"`) — define it in your action map if you want it dispatched. If it is not mapped, replay fails with `TraceReplayError`; if it is mapped, state comparison runs at step 0 too.
 
-With the **TypeScript backend** (default), `mbt::actionTaken` is empty at step 0 (a known Quint TS backend limitation), so step 0 is silently skipped.
+With the **TypeScript backend** (default), some traces report an empty `mbt::actionTaken` at step 0; only that empty placeholder is skipped. If the trace reports a non-empty action such as `"init"`, define that action in your map or replay fails with `TraceReplayError`.
 
 ### Additional Exports
 
-**`@firfi/quint-connect/effect`** also exports: `ITFList`, `ITFTuple`, `ITFVariant`, `ITFUnserializable`, `ItfTrace`, `MbtMeta`, `UntypedTraceSchema`, `generateTraces`, `defaultConfig`.
+**`@firfi/quint-connect/effect`** also exports: `ITFList`, `ITFTuple`, `ITFVariant`, `ITFUnserializable`, `ItfTrace`, `MbtMeta`, `UntypedTraceSchema`, `generateTraces`, `TraceGeneration`, `traceGenerationLayer`, `defaultConfig`.
 
 **`@firfi/quint-connect`** also exports: `transformITFValue`, `defaultConfig`.
 
@@ -275,9 +292,9 @@ The library exports typed error classes for programmatic error handling:
 |---|---|
 | `TraceReplayError` | Unknown action, handler failure, decode failure |
 | `StateMismatchError` | `compareState` returns `false` |
-| `QuintError` | `quint run` exits non-zero (includes stderr output) |
+| `QuintError` | `quint run` or `quint test` exits non-zero (includes stderr output) |
 | `QuintNotFoundError` | `quint` CLI not found |
-| `NoTracesError` | `quint run` produced no traces |
+| `NoTracesError` | trace generation produced no traces |
 
 **Simple API** — use `instanceof`:
 
@@ -303,38 +320,6 @@ quintRun(opts).pipe(
 ```
 
 `StateMismatchError` has `traceIndex`, `stepIndex`, `expected`, `actual`. `TraceReplayError` has `traceIndex`, `stepIndex`, `action`, `cause`.
-
-### Raw mode
-
-For full manual control (no schema, no typed dispatch), use the single-argument `defineDriver(factory)` overload. The factory returns a `step` callback that receives the action name and raw nondet picks:
-
-```ts
-import { defineDriver, run, pickFrom } from "@firfi/quint-connect"
-import { ITFBigInt } from "@firfi/quint-connect/zod"
-
-const result = await run({
-  spec: "./counter.qnt",
-  nTraces: 10,
-  maxSteps: 20,
-  seed: "1",
-  driver: defineDriver(() => {
-    let count = 0n
-    return {
-      step: (action, nondetPicks) => {
-        if (action === "Increment") {
-          const amount = pickFrom(nondetPicks, "amount", ITFBigInt)
-          if (amount !== undefined) count += amount
-        }
-      },
-      getState: () => ({ count }),
-    }
-  }),
-})
-```
-
-**`pickFrom(nondetPicks, key, schema)`** extracts a single pick: unwraps the Quint Option (`Some`/`None`), applies `transformITFValue`, and validates with the given Standard Schema. Returns `T | undefined` (`undefined` when the key is missing or `None`).
-
-For fully manual ITF decoding, use the re-exported `transformITFValue` from `@firfi/itf-trace-parser`.
 
 ### Deterministic specs
 

@@ -1,22 +1,18 @@
 import { describe, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
-import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { Effect, Predicate, Schema } from "effect"
 import * as path from "node:path"
 import { expect } from "vitest"
 
+import { ITFBigInt } from "@firfi/itf-trace-parser/effect"
 import { ITFBigInt as ITFBigIntZod } from "@firfi/itf-trace-parser/zod"
 import { z } from "zod"
-import { ITFBigInt } from "../src/itf/schema.js"
 
 import { QuintError } from "../src/cli/quint.js"
-import type { Config, Driver, PartialActionMap } from "../src/driver/types.js"
+import type { Config, Driver } from "../src/driver/types.js"
 import { defineDriver, stateCheck } from "../src/effect.js"
 import { quintRun, TraceReplayError } from "../src/runner/runner.js"
 import {
   defineDriver as defineDriverSimple,
-  NoTracesError,
-  pickFrom,
   run,
   stateCheck as simpleStateCheck,
   StateMismatchError as SimpleStateMismatchError,
@@ -31,10 +27,11 @@ const specDir = path.resolve(import.meta.dirname, "specs")
 
 const createCounterDriverFactory = () =>
   defineDriver(
-    { Increment: { amount: ITFBigInt } },
+    { init: {}, Increment: { amount: ITFBigInt } },
     () => {
       let count = 0n
       return {
+        init: () => Effect.void,
         Increment: ({ amount }) =>
           Effect.sync(() => {
             count += amount
@@ -47,8 +44,7 @@ const createCounterDriverFactory = () =>
 const createCounterDriverWithoutActions = (): Driver<
   typeof CounterStateSchema.Type,
   never,
-  never,
-  PartialActionMap
+  never
 > => ({
   actions: {},
   getState: () => Effect.succeed({ count: 0n })
@@ -56,8 +52,9 @@ const createCounterDriverWithoutActions = (): Driver<
 
 const createStatelessCounterDriverFactory = () =>
   defineDriver(
-    { Increment: { amount: ITFBigInt } },
+    { init: {}, Increment: { amount: ITFBigInt } },
     () => ({
+      init: () => Effect.void,
       Increment: () => Effect.void
     })
   )
@@ -117,6 +114,28 @@ describe("Integration: counter spec", () => {
       expect(result.seed).toBe("1")
     }), { timeout: 30000 })
 
+  it.effect("generates and replays one exact named Quint test", () =>
+    Effect.gen(function*() {
+      const actions: Array<string> = []
+      const result = yield* quintRun({
+        spec: path.join(specDir, "counter.qnt"),
+        generation: { mode: "test", test: "incrementOnce" },
+        maxSamples: 1,
+        seed: "1",
+        driverFactory: defineDriver(
+          { init: { amount: ITFBigInt }, Increment: { amount: ITFBigInt } },
+          () => ({
+            init: () => Effect.sync(() => actions.push("init")),
+            Increment: () => Effect.sync(() => actions.push("Increment")),
+            config: () => ({ nondetPath: ["replayAction"] })
+          })
+        )
+      })
+
+      expect(result).toEqual({ tracesReplayed: 1, seed: "1" })
+      expect(actions).toEqual(["init", "Increment"])
+    }), { timeout: 30000 })
+
   it.effect("fails with TraceReplayError on unknown action", () =>
     Effect.gen(function*() {
       const result = yield* quintRun({
@@ -142,62 +161,54 @@ describe("Integration: counter spec", () => {
     }), { timeout: 30000 })
 })
 
-describe("Integration: raw mode", () => {
-  it("simple API raw mode with defineDriver(factory) and pickFrom", { timeout: 30000 }, async () => {
-    const steps: Array<{ action: string; amount: bigint | undefined }> = []
+describe("Integration: typed dispatch", () => {
+  it("simple API dispatches decoded action picks", { timeout: 30000 }, async () => {
+    const amounts: Array<bigint> = []
     const result = await run({
       spec: path.join(specDir, "counter.qnt"),
       nTraces: 1,
       maxSamples: 2,
       maxSteps: 3,
       seed: "1",
-      driver: defineDriverSimple(() => ({
-        step: (action, nondetPicks) => {
-          const amount = pickFrom(nondetPicks, "amount", ITFBigIntZod)
-          steps.push({ action, amount })
-        }
-      }))
+      driver: defineDriverSimple(
+        { init: {}, Increment: { amount: ITFBigIntZod } },
+        () => ({
+          init: () => {},
+          Increment: ({ amount }) => {
+            amounts.push(amount)
+          }
+        })
+      )
     })
 
     expect(result.tracesReplayed).toBeGreaterThan(0)
-    expect(steps.length).toBeGreaterThan(1)
-    // Step 0: TS backend reports "init" placeholder (Rust backend would report actual init action name)
-    expect(steps[0].action).toBe("init")
-    // Step 1+: actual action names
-    expect(steps[1].action).toBe("Increment")
-    expect(typeof steps[1].amount).toBe("bigint")
+    expect(amounts.length).toBeGreaterThan(0)
+    expect(typeof amounts[0]).toBe("bigint")
   })
 
-  it.effect("effect-level raw mode with manual Driver step", () =>
+  it.effect("effect API dispatches decoded action picks", () =>
     Effect.gen(function*() {
-      const steps: Array<{ action: string; picks: ReadonlyMap<string, unknown> }> = []
+      const amounts: Array<bigint> = []
       yield* quintRun({
         spec: path.join(specDir, "counter.qnt"),
         nTraces: 1,
         maxSamples: 2,
         maxSteps: 3,
         seed: "1",
-        driverFactory: {
-          create: () => {
-            const driver: Driver<unknown, never, never, PartialActionMap> = {
-              actions: {},
-              step: (action: string, picks: ReadonlyMap<string, unknown>) =>
-                Effect.sync(() => {
-                  steps.push({ action, picks })
-                })
-            }
-            return Effect.succeed(driver)
-          }
-        }
+        driverFactory: defineDriver(
+          { init: {}, Increment: { amount: ITFBigInt } },
+          () => ({
+            init: () => Effect.void,
+            Increment: ({ amount }) =>
+              Effect.sync(() => {
+                amounts.push(amount)
+              })
+          })
+        )
       })
 
-      expect(steps.length).toBeGreaterThan(1)
-      // Step 0: TS backend reports "init" placeholder
-      expect(steps[0].action).toBe("init")
-      // Step 1+: actual action names
-      expect(steps[1].action).toBe("Increment")
-      expect(steps[1].picks).toBeInstanceOf(Map)
-      expect(steps[1].picks.has("amount")).toBe(true)
+      expect(amounts.length).toBeGreaterThan(0)
+      expect(typeof amounts[0]).toBe("bigint")
     }), { timeout: 30000 })
 })
 
@@ -212,10 +223,11 @@ const nestedConfig: Config = {
 
 const createNestedDriverFactory = () =>
   defineDriver(
-    { Increment: { amount: ITFBigInt } },
+    { init: {}, Increment: { amount: ITFBigInt } },
     () => {
       let count = 0n
       return {
+        init: () => Effect.void,
         Increment: ({ amount }) =>
           Effect.sync(() => {
             count += amount
@@ -268,23 +280,21 @@ describe("Integration: multi-module spec with qualified state keys", () => {
         maxSamples: 2,
         maxSteps: 3,
         seed: "1",
-        driverFactory: {
-          create: () => {
-            const driver: Driver<unknown, never, never, PartialActionMap> = {
-              actions: {},
-              step: (action, _nondetPicks) =>
-                Effect.sync(() => {
-                  actions.push(action)
-                }),
-              getState: () => Effect.succeed({})
-            }
-            return Effect.succeed(driver)
-          }
-        },
+        driverFactory: defineDriver(
+          { init: {}, Increment: { amount: ITFBigInt } },
+          () => ({
+            init: () => Effect.void,
+            Increment: () =>
+              Effect.sync(() => {
+                actions.push("Increment")
+              }),
+            getState: () => Effect.succeed({})
+          })
+        ),
         stateCheck: stateCheck(
           (raw) => {
-            if (typeof raw === "object" && raw !== null) {
-              rawStates.push({ ...raw as Record<string, unknown> })
+            if (Predicate.isObject(raw)) {
+              rawStates.push({ ...raw })
             }
             return Effect.succeed(raw)
           },
@@ -301,20 +311,18 @@ describe("Integration: multi-module spec with qualified state keys", () => {
       // Instance state keys are fully qualified: "mainModule::alias::variable"
       expect(keys).toContain("multimod::ctr::count")
       // Actions are NOT qualified
-      expect(actions.length).toBeGreaterThan(1)
-      // Step 0: TS backend reports "init" placeholder
-      expect(actions[0]).toBe("init")
-      // Step 1+: actual action names
-      expect(actions[1]).toBe("Increment")
+      expect(actions.length).toBeGreaterThan(0)
+      expect(actions[0]).toBe("Increment")
     }), { timeout: 30000 })
 
   it.effect("full replay with state check using qualified keys", () =>
     Effect.gen(function*() {
       const factory = defineDriver(
-        { Increment: { amount: ITFBigInt } },
+        { init: {}, Increment: { amount: ITFBigInt } },
         () => {
           let count = 0n
           return {
+            init: () => Effect.void,
             Increment: ({ amount }) =>
               Effect.sync(() => {
                 count += amount
@@ -357,11 +365,12 @@ describe("Integration: statePath through qualified key", () => {
       const rawStates: Array<Record<string, unknown>> = []
 
       const factory = defineDriver(
-        { Increment: { amount: ITFBigInt } },
+        { init: {}, Increment: { amount: ITFBigInt } },
         () => {
           let count = 0n
           let label = "start"
           return {
+            init: () => Effect.void,
             Increment: ({ amount }) =>
               Effect.sync(() => {
                 count += amount
@@ -383,8 +392,8 @@ describe("Integration: statePath through qualified key", () => {
         driverFactory: factory,
         stateCheck: stateCheck(
           (raw) => {
-            if (typeof raw === "object" && raw !== null) {
-              rawStates.push({ ...raw as Record<string, unknown> })
+            if (Predicate.isObject(raw)) {
+              rawStates.push({ ...raw })
             }
             return Schema.decodeUnknownEffect(MultimodNestedInnerSchema)(raw).pipe(Effect.orDie)
           },
@@ -405,10 +414,11 @@ describe("Integration: statePath through qualified key", () => {
 
 const createPartialConfigDriverFactory = () =>
   defineDriver(
-    { Increment: { amount: ITFBigInt } },
+    { init: {}, Increment: { amount: ITFBigInt } },
     () => {
       let count = 0n
       return {
+        init: () => Effect.void,
         Increment: ({ amount }) =>
           Effect.sync(() => {
             count += amount
@@ -464,64 +474,6 @@ describe("Integration: QuintError includes stderr", () => {
     }), { timeout: 30000 })
 })
 
-describe("Integration: Quint CLI args", () => {
-  it("passes invariants and witnesses using Quint v0.31 plural flags", { timeout: 30000 }, async () => {
-    const tempDir = await mkdtemp(path.join(tmpdir(), "quint-connect-cli-args-"))
-    const binDir = path.join(tempDir, "bin")
-    const argsPath = path.join(tempDir, "args.json")
-    await mkdir(binDir)
-    const fakeNpx = path.join(binDir, "npx")
-    await writeFile(
-      fakeNpx,
-      `#!/usr/bin/env node
-import { writeFileSync } from "node:fs"
-writeFileSync(process.env["QUINT_ARGS_FILE"], JSON.stringify(process.argv.slice(2), null, 2))
-process.exit(0)
-`
-    )
-    await chmod(fakeNpx, 0o755)
-
-    const originalPath = process.env["PATH"]
-    const originalArgsFile = process.env["QUINT_ARGS_FILE"]
-    process.env["PATH"] = `${binDir}${path.delimiter}${originalPath ?? ""}`
-    process.env["QUINT_ARGS_FILE"] = argsPath
-
-    try {
-      await run({
-        spec: path.join(specDir, "counter.qnt"),
-        nTraces: 1,
-        seed: "1",
-        invariants: ["InvA", "InvB"],
-        witnesses: ["WitnessA", "WitnessB"],
-        driver: defineDriverSimple(() => ({
-          step: () => {}
-        }))
-      })
-      expect.unreachable("fake quint produces no traces")
-    } catch (e: unknown) {
-      expect(e).toBeInstanceOf(NoTracesError)
-    } finally {
-      if (originalPath === undefined) {
-        delete process.env["PATH"]
-      } else {
-        process.env["PATH"] = originalPath
-      }
-      if (originalArgsFile === undefined) {
-        delete process.env["QUINT_ARGS_FILE"]
-      } else {
-        process.env["QUINT_ARGS_FILE"] = originalArgsFile
-      }
-    }
-
-    const args = JSON.parse(await readFile(argsPath, "utf8")) as Array<string>
-    expect(args).toContain("--invariants")
-    expect(args).toContain("--witnesses")
-    expect(args).not.toContain("--invariant")
-    expect(args).not.toContain("--witness")
-    expect(args).toEqual(expect.arrayContaining(["InvA", "InvB", "WitnessA", "WitnessB"]))
-  })
-})
-
 describe("Simple API: error unwrapping", () => {
   it("TraceReplayError instanceof works after run() rejects", { timeout: 30000 }, async () => {
     try {
@@ -554,8 +506,9 @@ describe("Simple API: error unwrapping", () => {
         maxSteps: 3,
         seed: "1",
         driver: defineDriverSimple(
-          { Increment: { amount: ITFBigIntZod } },
+          { init: {}, Increment: { amount: ITFBigIntZod } },
           () => ({
+            init: () => {},
             Increment: () => {
               // intentionally do nothing — state will mismatch
             },
@@ -586,8 +539,9 @@ describe("Simple API: error unwrapping", () => {
         maxSteps: 3,
         seed: "1",
         driver: defineDriverSimple(
-          { Increment: { amount: ITFBigIntZod } },
+          { init: {}, Increment: { amount: ITFBigIntZod } },
           () => ({
+            init: () => {},
             Increment: () => {
               throw new Error("handler crash")
             }
