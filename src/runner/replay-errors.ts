@@ -1,15 +1,18 @@
 import { Effect, Schema } from "effect"
 
-export class StateMismatchError extends Schema.TaggedError<StateMismatchError>()("StateMismatchError", {
+export class StateMismatchError extends Schema.TaggedErrorClass<StateMismatchError>()("StateMismatchError", {
   message: Schema.String,
   traceIndex: Schema.Number,
   stepIndex: Schema.Number,
   expected: Schema.Unknown,
   actual: Schema.Unknown,
-  showDiff: Schema.optionalWith(Schema.Boolean, { default: () => true })
+  showDiff: Schema.Boolean.pipe(
+    Schema.withConstructorDefault(Effect.succeed(true)),
+    Schema.withDecodingDefault(Effect.succeed(true))
+  )
 }) {}
 
-export class TraceReplayError extends Schema.TaggedError<TraceReplayError>()("TraceReplayError", {
+export class TraceReplayError extends Schema.TaggedErrorClass<TraceReplayError>()("TraceReplayError", {
   message: Schema.String,
   traceIndex: Schema.Number,
   stepIndex: Schema.Number,
@@ -17,7 +20,7 @@ export class TraceReplayError extends Schema.TaggedError<TraceReplayError>()("Tr
   cause: Schema.optional(Schema.Unknown)
 }) {}
 
-export class NoTracesError extends Schema.TaggedError<NoTracesError>()("NoTracesError", {
+export class NoTracesError extends Schema.TaggedErrorClass<NoTracesError>()("NoTracesError", {
   message: Schema.String
 }) {}
 
@@ -60,7 +63,7 @@ export const withTraceReplayError = <A, E, R>(
 ): Effect.Effect<A, TraceReplayError, R> =>
   effect.pipe(
     Effect.mapError((cause: E) => traceReplayError(context, formatMessage(cause), cause)),
-    Effect.catchAllDefect((defect) => Effect.fail(traceReplayError(context, formatMessage(defect), defect)))
+    Effect.catchDefect((defect) => Effect.fail(traceReplayError(context, formatMessage(defect), defect)))
   )
 
 /** @internal */

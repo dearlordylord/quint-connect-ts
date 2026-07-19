@@ -19,17 +19,17 @@ const extractMbtMeta = (
   context: ReplayStepContext
 ): Effect.Effect<MbtMeta, TraceReplayError> =>
   Effect.mapError(
-    Schema.decodeUnknown(MbtMetaSchema)(state),
+    Schema.decodeUnknownEffect(MbtMetaSchema)(state),
     (cause) => traceReplayError(actionContext(context, "unknown"), `Failed to extract MBT metadata: ${cause}`)
   )
 
 const isItfOption = (value: unknown): boolean =>
-  Predicate.isRecord(value) && (value["tag"] === "Some" || value["tag"] === "None")
+  Predicate.isObject(value) && (value["tag"] === "Some" || value["tag"] === "None")
 
 const normalizeNondetPathPick = (value: unknown): unknown => isItfOption(value) ? value : { tag: "Some", value }
 
 const normalizeNondetPathPicks = (value: unknown): ReadonlyMap<string, unknown> =>
-  Predicate.isRecord(value)
+  Predicate.isObject(value)
     ? new Map(Object.entries(value).map(([key, pick]) => [key, normalizeNondetPathPick(pick)]))
     : new Map<string, unknown>()
 
@@ -39,7 +39,7 @@ const extractFromNondetPath = (
   context: ReplayStepContext
 ): Effect.Effect<ReplayAction, TraceReplayError> => {
   const raw = resolveNestedValue(state, nondetPath)
-  if (!Predicate.isRecord(raw) || typeof raw["tag"] !== "string") {
+  if (!Predicate.isObject(raw) || typeof raw["tag"] !== "string") {
     return Effect.fail(
       traceReplayError(
         actionContext(context, "unknown"),

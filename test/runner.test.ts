@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Predicate, Schema } from "effect"
 import { expect } from "vitest"
 
 import { ITFBigInt } from "@firfi/itf-trace-parser/effect"
@@ -341,7 +341,7 @@ describe("replayTrace with module-qualified state keys", () => {
         stateCheck(
           (raw) => {
             receivedRaws.push(raw)
-            return Schema.decodeUnknown(
+            return Schema.decodeUnknownEffect(
               Schema.Struct({ "counter_inner::count": ITFBigInt })
             )(raw).pipe(Effect.orDie)
           },
@@ -351,7 +351,10 @@ describe("replayTrace with module-qualified state keys", () => {
       )
 
       expect(receivedRaws.length).toBe(1)
-      const received = receivedRaws[0] as Record<string, unknown>
+      const received = receivedRaws[0]
+      if (!Predicate.isObject(received)) {
+        throw new Error("expected a record state")
+      }
       expect(Object.keys(received)).toContain("counter_inner::count")
       expect(Object.keys(received)).not.toContain("#meta")
       expect(Object.keys(received)).not.toContain("mbt::actionTaken")
@@ -397,7 +400,7 @@ describe("replayTrace with module-qualified state keys", () => {
         driver,
         defaultConfig,
         stateCheck(
-          (raw) => Schema.decodeUnknown(ModState)(raw).pipe(Effect.orDie),
+          (raw) => Schema.decodeUnknownEffect(ModState)(raw).pipe(Effect.orDie),
           (spec, impl) => spec["mod::x"] === impl["mod::x"] && spec["mod::y"] === impl["mod::y"]
         ),
         "test-seed"
@@ -471,7 +474,7 @@ describe("replayTrace with statePath through qualified key", () => {
         stateCheck(
           (raw) => {
             receivedRaws.push(raw)
-            return Schema.decodeUnknown(
+            return Schema.decodeUnknownEffect(
               Schema.Struct({ count: ITFBigInt, label: Schema.String })
             )(raw).pipe(Effect.orDie)
           },
@@ -481,7 +484,10 @@ describe("replayTrace with statePath through qualified key", () => {
       )
 
       expect(receivedRaws.length).toBe(1)
-      const received = receivedRaws[0] as Record<string, unknown>
+      const received = receivedRaws[0]
+      if (!Predicate.isObject(received)) {
+        throw new Error("expected a record state")
+      }
       // deserializeState should receive the inner record, not the qualified key
       expect(Object.keys(received)).toContain("count")
       expect(Object.keys(received)).toContain("label")
@@ -537,7 +543,7 @@ describe("replayTrace strips metadata before deserializeState (T1a)", () => {
         stateCheck(
           (raw) => {
             receivedRaws.push(raw)
-            return Schema.decodeUnknown(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie)
+            return Schema.decodeUnknownEffect(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie)
           },
           () => true
         ),
@@ -675,7 +681,7 @@ describe("StateMismatchError contains expected/actual in message (T1c)", () => {
         driver,
         defaultConfig,
         stateCheck(
-          (raw) => Schema.decodeUnknown(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie),
+          (raw) => Schema.decodeUnknownEffect(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie),
           (spec, impl) => spec.count === impl.count
         ),
         "abc123"
@@ -857,7 +863,7 @@ describe("replayTrace step 0 handling", () => {
         emptyDriver,
         defaultConfig,
         stateCheck(
-          (raw) => Schema.decodeUnknown(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie),
+          (raw) => Schema.decodeUnknownEffect(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie),
           () => {
             stateChecks += 1
             return true
@@ -920,7 +926,7 @@ describe("replayTrace step 0 handling", () => {
         stateCheck(
           (raw) => {
             comparedSteps.push(stepCounter++)
-            return Schema.decodeUnknown(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie)
+            return Schema.decodeUnknownEffect(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie)
           },
           () => true
         ),

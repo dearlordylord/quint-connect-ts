@@ -1,7 +1,8 @@
-import { Effect } from "effect"
+import { Effect, Predicate } from "effect"
 import { spawn } from "node:child_process"
 
 import { QuintError, QuintNotFoundError } from "./errors.js"
+import { makeProcessGroupLifecycle } from "./process-group-lifecycle.js"
 import type { RunOptions } from "./run-options.js"
 import { DEFAULT_MAX_SAMPLES, DEFAULT_N_TRACES } from "./run-options.js"
 import type { TraceGenerationAdapter } from "./trace-adapter.js"
@@ -101,8 +102,9 @@ export const makeRunQuintProcess = (
   args: ReadonlyArray<string>,
   verbose: boolean
 ): Effect.Effect<QuintProcessResult, QuintNotFoundError> =>
-  Effect.async<QuintProcessResult, QuintNotFoundError>((resume) => {
+  Effect.callback<QuintProcessResult, QuintNotFoundError>((resume) => {
     const env = verbose ? { ...process.env, QUINT_VERBOSE: "true" } : process.env
+    let completeProcess = () => {}
     const startProc = (cmd: string, cmdArgs: ReadonlyArray<string>) => {
       const proc = spawnProcess(cmd, cmdArgs, { env, detached: true })
       let stderr = ""
@@ -114,46 +116,31 @@ export const makeRunQuintProcess = (
         if (proc !== activeProc) {
           return
         }
-        process.removeListener("exit", killGroup)
+        completeProcess()
         resume(Effect.succeed({ exitCode: code ?? 1, stderr }))
       })
       proc.on("error", (e) => {
         if (proc !== activeProc) {
           return
         }
-        if ((e as NodeJS.ErrnoException).code === "ENOENT" && cmd === "quint") {
+        if (Predicate.isObject(e) && e["code"] === "ENOENT" && cmd === "quint") {
           console.warn(
             "[quint-connect] 'quint' not found on PATH, falling back to npx (slower). Install globally: npm i -g @informalsystems/quint"
           )
           activeProc = startProc("npx", ["@informalsystems/quint", ...cmdArgs])
         } else {
-          process.removeListener("exit", killGroup)
+          completeProcess()
           resume(Effect.fail(new QuintNotFoundError({ message: `Failed to start quint: ${e}` })))
         }
       })
       return proc
     }
 
-    let killGroup = () => {}
-
     let activeProc = startProc("quint", [...args])
+    const lifecycle = makeProcessGroupLifecycle(() => activeProc)
+    completeProcess = lifecycle.complete
 
-    killGroup = () => {
-      try {
-        const pid = activeProc.pid
-        if (pid !== undefined) {
-          process.kill(-pid, "SIGKILL")
-        }
-      } catch {
-        // already dead
-      }
-    }
-    process.on("exit", killGroup)
-
-    return Effect.sync(() => {
-      process.removeListener("exit", killGroup)
-      killGroup()
-    })
+    return lifecycle.interrupt
   })
 
 const runQuintProcess = makeRunQuintProcess()

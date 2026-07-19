@@ -12,7 +12,7 @@ export const resolveNestedValue = (
 ): unknown => {
   let current: unknown = obj
   for (const key of path) {
-    if (!Predicate.isRecord(current) || !(key in current)) {
+    if (!Predicate.isObject(current) || !(key in current)) {
       return undefined
     }
     current = current[key]

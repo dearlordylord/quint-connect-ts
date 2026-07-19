@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Fiber } from "effect"
 import { EventEmitter } from "node:events"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -6,12 +6,18 @@ import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 
 import {
+  decodeCompiledEvaluatorInput,
   makeCompiledEvaluatorTraceAdapter,
+  makeRunEvaluatorProcess,
   normalizeEvaluatorOutput,
   patchCompiledEvaluatorInput
 } from "../src/cli/compiled-evaluator-adapter.js"
 import { buildRunArgs, makeQuintCliTraceAdapter, makeRunQuintProcess } from "../src/cli/quint-cli-adapter.js"
 import { readTraceFiles, writeTraceFiles } from "../src/cli/trace-files.js"
+import { defaultConfig } from "../src/driver/types.js"
+import { defineDriver } from "../src/effect.js"
+import { ITFBigInt } from "../src/itf/schema.js"
+import { replayTrace } from "../src/runner/runner.js"
 
 const withTempDir = async <A>(run: (dir: string) => Promise<A>): Promise<A> => {
   const dir = await mkdtemp(join(tmpdir(), "qc-trace-test-"))
@@ -22,8 +28,20 @@ const withTempDir = async <A>(run: (dir: string) => Promise<A>): Promise<A> => {
   }
 }
 
+const compiledInput = (source: string) => Effect.runSync(decodeCompiledEvaluatorInput(source))
+
 class FakeProcess extends EventEmitter {
   readonly stdout = { resume: vi.fn() }
+  readonly stderr = new EventEmitter()
+
+  constructor(readonly pid: number) {
+    super()
+  }
+}
+
+class FakeEvaluatorProcess extends EventEmitter {
+  readonly stdin = { write: vi.fn(), end: vi.fn() }
+  readonly stdout = new EventEmitter()
   readonly stderr = new EventEmitter()
 
   constructor(readonly pid: number) {
@@ -144,9 +162,29 @@ describe("Quint CLI trace adapter", () => {
 })
 
 describe("compiled evaluator trace adapter", () => {
+  it("kills the evaluator process group when the Effect is interrupted", async () => {
+    const proc = new FakeEvaluatorProcess(4242)
+    const spawnProcess = vi.fn(() => proc)
+    const kill = vi.spyOn(process, "kill").mockReturnValue(true)
+
+    try {
+      const fiber = Effect.runFork(makeRunEvaluatorProcess(spawnProcess)("/fake/evaluator", "{}"))
+      await Effect.runPromise(Fiber.interrupt(fiber))
+
+      expect(spawnProcess).toHaveBeenCalledWith(
+        "/fake/evaluator",
+        ["simulate-from-stdin"],
+        { stdio: ["pipe", "pipe", "pipe"], detached: true }
+      )
+      expect(kill).toHaveBeenCalledWith(-4242, "SIGKILL")
+    } finally {
+      kill.mockRestore()
+    }
+  })
+
   it("patches evaluator runtime parameters and seed", () => {
     const result = patchCompiledEvaluatorInput(
-      "{\"nruns\":1,\"nsteps\":1,\"ntraces\":1,\"nthreads\":1,\"seed\":null}",
+      compiledInput("{\"nruns\":1,\"nsteps\":1,\"ntraces\":1,\"nthreads\":1,\"seed\":null}"),
       { spec: "counter.qnt", maxSamples: 7, maxSteps: 5, nTraces: 2, seed: "0x0f" },
       4,
       "000000000000000a"
@@ -160,8 +198,8 @@ describe("compiled evaluator trace adapter", () => {
 
   it("patches decimal seeds as decimal and prefixed hex seeds as hex", () => {
     const rawInput = "{\"nruns\":1,\"nsteps\":1,\"ntraces\":1,\"nthreads\":1,\"seed\":null}"
-    const decimal = patchCompiledEvaluatorInput(rawInput, { spec: "counter.qnt", seed: "42" }, 4, "a")
-    const hex = patchCompiledEvaluatorInput(rawInput, { spec: "counter.qnt", seed: "0x42" }, 4, "a")
+    const decimal = patchCompiledEvaluatorInput(compiledInput(rawInput), { spec: "counter.qnt", seed: "42" }, 4, "a")
+    const hex = patchCompiledEvaluatorInput(compiledInput(rawInput), { spec: "counter.qnt", seed: "0x42" }, 4, "a")
 
     expect(decimal.input).toBe("{\"nruns\":10000,\"nsteps\":10,\"ntraces\":10,\"nthreads\":4,\"seed\":42}")
     expect(decimal.seedHex).toBe("0x2a")
@@ -171,7 +209,7 @@ describe("compiled evaluator trace adapter", () => {
 
   it("injects a seed when compiled input has no seed field", () => {
     const result = patchCompiledEvaluatorInput(
-      "{\"nruns\":1,\"nsteps\":1,\"ntraces\":1,\"nthreads\":1}",
+      compiledInput("{\"nruns\":1,\"nsteps\":1,\"ntraces\":1,\"nthreads\":1}"),
       { spec: "counter.qnt" },
       4,
       "000000000000000a"
@@ -179,6 +217,24 @@ describe("compiled evaluator trace adapter", () => {
 
     expect(result.input).toBe("{\"nruns\":10000,\"nsteps\":10,\"ntraces\":10,\"nthreads\":4,\"seed\":10}")
     expect(result.seedHex).toBe("0xa")
+  })
+
+  it("schema-decodes opaque input while preserving missing runtime fields", () => {
+    const missingRuntime = patchCompiledEvaluatorInput(
+      compiledInput("{\"seed\":null}"),
+      { spec: "counter.qnt" },
+      4,
+      "a"
+    )
+    const opaqueInput = patchCompiledEvaluatorInput(
+      compiledInput("compiled evaluator expression"),
+      { spec: "counter.qnt" },
+      4,
+      "a"
+    )
+
+    expect(missingRuntime.input).toBe("{\"seed\":10}")
+    expect(opaqueInput.input).toBe("compiled evaluator expression")
   })
 
   it("normalizes evaluator stdout to Quint out-itf trace shape", async () => {
@@ -205,7 +261,22 @@ progress
     }])
   })
 
-  it("runs with fake evaluator dependencies and the shared trace reader", async () => {
+  it("preserves master's permissive normalization of evaluator trace entries", async () => {
+    const traces = await Effect.runPromise(normalizeEvaluatorOutput(`
+{"bestTraces":[{"states":{"vars":"invalid","states":[]}},{"states":{"vars":["counter"],"states":[{"counter":2}]}}]}
+`))
+    const missingTraces = await Effect.runPromise(normalizeEvaluatorOutput(`
+{"status":42,"bestTraces":"invalid"}
+`))
+
+    expect(traces).toEqual([
+      { vars: "invalid", states: [] },
+      { vars: ["counter"], states: [{ counter: 2n }] }
+    ])
+    expect(missingTraces).toEqual([])
+  })
+
+  it("generates compiled-input traces and replays them through driver dispatch", async () => {
     await withTempDir(async (dir) => {
       let evaluatorInput = ""
       const adapter = makeCompiledEvaluatorTraceAdapter({
@@ -221,7 +292,7 @@ progress
             exitCode: 0,
             stderr: "",
             stdout:
-              "{\"status\":\"ok\",\"bestTraces\":[{\"states\":{\"vars\":[\"counter\"],\"states\":[{\"counter\":4}]}}]}"
+              "{\"status\":\"ok\",\"bestTraces\":[{\"states\":{\"vars\":[\"counter\",\"mbt::actionTaken\",\"mbt::nondetPicks\"],\"states\":[{\"counter\":4,\"mbt::actionTaken\":\"Increment\",\"mbt::nondetPicks\":{\"amount\":{\"tag\":\"Some\",\"value\":4}}}]}}]}"
           })
         }
       })
@@ -236,7 +307,21 @@ progress
 
       expect(evaluatorInput).toBe("{\"nruns\":3,\"nsteps\":6,\"ntraces\":1,\"nthreads\":3,\"seed\":10}")
       expect(traces).toHaveLength(1)
-      expect(traces[0]?.states[0]).toEqual({ counter: { "#bigint": "4" } })
+      const trace = traces[0]
+      expect(trace.states[0]).toMatchObject({ counter: { "#bigint": "4" } })
+
+      const dispatched: Array<bigint> = []
+      const driver = await Effect.runPromise(
+        defineDriver(
+          { Increment: { amount: ITFBigInt } },
+          () => ({
+            Increment: ({ amount }) => Effect.sync(() => dispatched.push(amount))
+          })
+        ).create()
+      )
+
+      await Effect.runPromise(replayTrace(trace, 0, driver, defaultConfig, undefined, "0xa"))
+      expect(dispatched).toEqual([4n])
     })
   })
 })

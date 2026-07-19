@@ -49,9 +49,7 @@ describe("runner state-check module", () => {
           deserializeState: () => Effect.succeed({ count: 1n }),
           compareState: () => true
         },
-        traceIndex: 2,
-        stepIndex: 3,
-        action: "Increment",
+        context: { traceIndex: 2, stepIndex: 3, action: "Increment" },
         seed: "seed"
       }).pipe(
         Effect.match({
@@ -78,12 +76,11 @@ describe("runner state-check module", () => {
         statePath: [],
         driver: { getState: () => Effect.succeed({ count: 999n }) },
         stateCheck: {
-          deserializeState: (raw) => Schema.decodeUnknown(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie),
+          deserializeState: (raw) =>
+            Schema.decodeUnknownEffect(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie),
           compareState: (spec, impl) => spec.count === impl.count
         },
-        traceIndex: 0,
-        stepIndex: 1,
-        action: "Increment",
+        context: { traceIndex: 0, stepIndex: 1, action: "Increment" },
         seed: "abc123"
       }).pipe(
         Effect.match({
@@ -115,12 +112,11 @@ describe("runner state-check module", () => {
         statePath: [],
         driver,
         stateCheck: {
-          deserializeState: (raw) => Schema.decodeUnknown(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie),
+          deserializeState: (raw) =>
+            Schema.decodeUnknownEffect(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie),
           compareState: (spec, impl) => spec.count === impl.count
         },
-        traceIndex: 0,
-        stepIndex: 1,
-        action: "Increment",
+        context: { traceIndex: 0, stepIndex: 1, action: "Increment" },
         seed: "abc123"
       })
     }))

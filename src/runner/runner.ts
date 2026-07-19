@@ -56,9 +56,7 @@ export const replayTrace = <S, E, R, Actions extends ActionMap<E, R>>(
           statePath,
           driver,
           stateCheck,
-          traceIndex,
-          stepIndex,
-          action,
+          context,
           seed
         })
       }

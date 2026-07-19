@@ -1,5 +1,5 @@
-import { Effect } from "effect"
-import { execSync } from "node:child_process"
+import { Effect, Option, Schema } from "effect"
+import { execFile } from "node:child_process"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -54,27 +54,42 @@ const generateTracesWithTempDir = (
   )
 
 /** Warn if zombie quint_evaluator processes are running because they cause large slowdowns. */
-const warnZombieEvaluators = (): void => {
-  try {
-    const result = execSync("pgrep -c quint_evaluator", { stdio: ["pipe", "pipe", "pipe"] }).toString().trim()
-    const count = parseInt(result, 10)
+const ZombieEvaluatorCount = Schema.NumberFromString
+
+const countZombieEvaluators = (): Effect.Effect<number> =>
+  Effect.callback((resume) => {
+    const process = execFile("pgrep", ["-c", "quint_evaluator"], { encoding: "utf8" }, (error, stdout) => {
+      if (error !== null) {
+        resume(Effect.succeed(0))
+        return
+      }
+      const decoded = Schema.decodeUnknownOption(ZombieEvaluatorCount)(stdout.trim())
+      resume(Effect.succeed(Option.isSome(decoded) ? decoded.value : 0))
+    })
+    return Effect.sync(() => process.kill())
+  })
+
+/** Warn if zombie quint_evaluator processes are running because they cause large slowdowns. */
+const warnZombieEvaluators = (): Effect.Effect<void> =>
+  Effect.gen(function*() {
+    const count = yield* countZombieEvaluators()
     if (count > 0) {
-      console.warn(
-        `[quint-connect] WARNING: Found ${count} running quint_evaluator process(es). `
-          + `These consume 100% CPU each and will slow down this run by ~40x. `
-          + `Kill them: killall -9 quint_evaluator`
-      )
+      yield* Effect.sync(() => {
+        console.warn(
+          `[quint-connect] WARNING: Found ${count} running quint_evaluator process(es). `
+            + `These consume 100% CPU each and will slow down this run by ~40x. `
+            + `Kill them: killall -9 quint_evaluator`
+        )
+      })
     }
-  } catch {
-    // pgrep returns exit code 1 when no processes match.
-  }
-}
+  })
 
 export const generateTraces = (
   opts: RunOptions
-): Effect.Effect<ReadonlyArray<ItfTrace>, QuintError | QuintNotFoundError> => {
-  warnZombieEvaluators()
-  return opts.traceDir !== undefined
-    ? generateTracesWithTraceDir(opts, opts.traceDir)
-    : generateTracesWithTempDir(opts)
-}
+): Effect.Effect<ReadonlyArray<ItfTrace>, QuintError | QuintNotFoundError> =>
+  Effect.gen(function*() {
+    yield* warnZombieEvaluators()
+    return yield* opts.traceDir !== undefined
+      ? generateTracesWithTraceDir(opts, opts.traceDir)
+      : generateTracesWithTempDir(opts)
+  })

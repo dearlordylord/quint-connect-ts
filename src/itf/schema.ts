@@ -24,18 +24,12 @@ export const ItfOption = <A>(inner: Schema.Schema<A>) =>
     Schema.decodeTo(
       Schema.UndefinedOr(Schema.toType(inner)),
       {
-        decode: SchemaGetter.transform(
-          (v: unknown) => {
-            const variant = v as { readonly tag: string; readonly value: unknown }
-            return variant.tag === "Some" ? variant.value as A : undefined
-          }
-        ),
-        encode: SchemaGetter.transform((v: unknown) => {
-          const val = v as A | undefined
-          return val !== undefined
-            ? { tag: "Some" as const, value: val }
-            : { tag: "None" as const, value: { "#tup": [] } }
-        })
+        decode: SchemaGetter.transform((variant) => variant.tag === "Some" ? variant.value : undefined),
+        encode: SchemaGetter.transform((value) =>
+          value !== undefined
+            ? { tag: "Some", value }
+            : { tag: "None", value: { "#tup": [] } }
+        )
       }
     )
   )

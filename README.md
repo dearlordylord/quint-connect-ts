@@ -24,12 +24,14 @@ pnpm add @firfi/quint-connect
 # If using Zod ITF schemas (ITFBigInt, ITFSet, ITFMap) — requires Zod 4+:
 pnpm add zod
 
-# For Effect API:
-pnpm add @firfi/quint-connect effect
+# For the Effect 4 prerelease API (npm latest remains on Effect 3):
+pnpm add @firfi/quint-connect@effect4 effect@4.0.0-beta.99
 
 # For Effect vitest helper (quintIt):
-pnpm add -D @effect/vitest
+pnpm add -D @effect/vitest@4.0.0-beta.99
 ```
+
+The `effect4` prerelease line targets Effect `4.0.0-beta.99`. The untagged `latest` package continues to distribute the Effect 3 build.
 
 **Requirements:** Node.js 21+ (for `import.meta.dirname`), ESM (`"type": "module"` in package.json), [Quint CLI](https://github.com/informalsystems/quint) (`npx @informalsystems/quint` runs without global install).
 
@@ -140,7 +142,7 @@ const result = await Effect.runPromise(
       }
     ),
     stateCheck: stateCheck(
-      (raw) => Schema.decodeUnknown(CounterState)(raw).pipe(Effect.orDie),
+      (raw) => Schema.decodeUnknownEffect(CounterState)(raw).pipe(Effect.orDie),
       (spec, impl) => spec.count === impl.count,
     ),
   })
@@ -217,6 +219,7 @@ Shared by `run`, `quintRun`, and `generateTraces`:
 | `witnesses` | `string[]` | — | Witness names to report |
 | `verbose` | `boolean` | `false` | Sets `QUINT_VERBOSE=true`. Quint logs detailed simulation output to stderr. |
 | `traceDir` | `string` | temp dir | Directory to write ITF trace files. Files are kept after run. Useful for debugging — inspect generated traces when a test fails. |
+| `compiledInput` | `string` | — | Path to Quint's compiled Rust evaluator input. When present and readable, replay uses the compiled evaluator directly. |
 
 `run` additionally accepts:
 

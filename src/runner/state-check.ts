@@ -1,7 +1,8 @@
 import { Effect } from "effect"
 
 import type { StateComparator } from "../driver/types.js"
-import { jsonReplacer, StateMismatchError, TraceReplayError } from "./replay-errors.js"
+import type { ReplayActionContext, StateMismatchError } from "./replay-errors.js"
+import { stateMismatchError, TraceReplayError } from "./replay-errors.js"
 import { normalizeTraceState } from "./trace-state.js"
 
 export interface StateCheck<S> {
@@ -20,9 +21,7 @@ interface CheckReplayStateOptions<S, E, R> {
   readonly statePath: ReadonlyArray<string>
   readonly driver: StateReadableDriver<S, E, R>
   readonly stateCheck: StateCheck<S>
-  readonly traceIndex: number
-  readonly stepIndex: number
-  readonly action: string
+  readonly context: ReplayActionContext
   readonly seed: string
 }
 
@@ -38,9 +37,9 @@ export const checkReplayState = <S, E, R>(
       return yield* new TraceReplayError({
         message:
           "stateCheck is provided but driver.getState is not defined; getState is required when stateCheck is provided",
-        traceIndex: opts.traceIndex,
-        stepIndex: opts.stepIndex,
-        action: opts.action
+        traceIndex: opts.context.traceIndex,
+        stepIndex: opts.context.stepIndex,
+        action: opts.context.action
       })
     }
 
@@ -48,15 +47,6 @@ export const checkReplayState = <S, E, R>(
     const implState = yield* opts.driver.getState()
 
     if (!opts.stateCheck.compareState(specState, implState)) {
-      return yield* new StateMismatchError({
-        message:
-          `State mismatch at trace ${opts.traceIndex}, step ${opts.stepIndex}, action "${opts.action}" (seed: ${opts.seed})\nExpected: ${
-            JSON.stringify(specState, jsonReplacer)
-          }\nActual: ${JSON.stringify(implState, jsonReplacer)}`,
-        traceIndex: opts.traceIndex,
-        stepIndex: opts.stepIndex,
-        expected: specState,
-        actual: implState
-      })
+      return yield* stateMismatchError(opts.context, opts.seed, specState, implState)
     }
   })
