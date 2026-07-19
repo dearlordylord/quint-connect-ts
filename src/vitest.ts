@@ -8,11 +8,11 @@ export { quintTest } from "./vitest-simple.js"
 
 const DEFAULT_TIMEOUT = 30000
 
-export const quintIt = <S, Actions extends ActionMap<E, never>, E>(
+export const quintIt = <S, Actions extends ActionMap<E, never>, E, StateE, StateR>(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   itEffect: (name: string, fn: () => Effect.Effect<any, any, any>, options?: { readonly timeout?: number }) => void,
   name: string,
-  opts: QuintRunOptions<S, E, never, Actions>,
+  opts: QuintRunOptions<S, E, never, Actions, StateE, StateR>,
   timeout?: number | undefined
 ): void => {
   itEffect(name, () => quintRun(opts), { timeout: timeout ?? DEFAULT_TIMEOUT })

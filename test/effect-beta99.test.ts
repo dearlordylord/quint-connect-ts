@@ -1,18 +1,26 @@
 import { describe, it } from "@effect/vitest"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect } from "vitest"
 
 import { QuintError, QuintNotFoundError } from "../src/cli/errors.js"
-import { defineDriver, quintRun } from "../src/effect.js"
+import { defineDriver, quintRun, stateCheck } from "../src/effect.js"
 import { ITFBigInt } from "../src/itf/schema.js"
 import { NoTracesError, StateMismatchError, TraceReplayError } from "../src/runner/replay-errors.js"
 
 class ReplayService extends Context.Service<ReplayService, {
   readonly record: (amount: string) => void
 }>()("test/ReplayService") {}
+
+class StateDecodeError extends Schema.TaggedErrorClass<StateDecodeError>()("StateDecodeError", {
+  message: Schema.String
+}) {}
+
+class StateDecodeService extends Context.Service<StateDecodeService, {
+  readonly decode: (raw: unknown) => Effect.Effect<{ readonly count: bigint }, StateDecodeError>
+}>()("test/StateDecodeService") {}
 
 const withTraceDir = <A, E, R>(use: (traceDir: string) => Effect.Effect<A, E, R>) =>
   Effect.acquireUseRelease(
@@ -27,14 +35,19 @@ describe("Effect beta.99 compatibility", () => {
       const recorded: Array<string> = []
       const driverFactory = defineDriver(
         { init: {}, Increment: { amount: ITFBigInt } },
-        () => ({
-          init: () => Effect.void,
-          Increment: ({ amount }) =>
-            Effect.gen(function*() {
-              const service = yield* ReplayService
-              service.record(String(amount))
-            })
-        })
+        () => {
+          let count = 0n
+          return {
+            init: () => Effect.void,
+            Increment: ({ amount }) =>
+              Effect.gen(function*() {
+                const service = yield* ReplayService
+                count += amount
+                service.record(String(amount))
+              }),
+            getState: () => Effect.succeed({ count })
+          }
+        }
       )
 
       const result = yield* withTraceDir((traceDir) =>
@@ -45,13 +58,27 @@ describe("Effect beta.99 compatibility", () => {
           seed: "7",
           nTraces: 1,
           maxSamples: 1,
-          maxSteps: 1
+          maxSteps: 1,
+          stateCheck: stateCheck(
+            (raw) =>
+              Effect.gen(function*() {
+                const service = yield* StateDecodeService
+                return yield* service.decode(raw)
+              }),
+            (spec, impl) => spec.count === impl.count
+          )
         })
       ).pipe(
         Effect.provide(Layer.succeed(
           ReplayService,
           ReplayService.of({
             record: (amount) => recorded.push(amount)
+          })
+        )),
+        Effect.provide(Layer.succeed(
+          StateDecodeService,
+          StateDecodeService.of({
+            decode: (raw) => Schema.decodeUnknownEffect(Schema.Struct({ count: ITFBigInt }))(raw).pipe(Effect.orDie)
           })
         ))
       )

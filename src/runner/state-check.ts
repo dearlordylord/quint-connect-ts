@@ -1,37 +1,31 @@
 import { Effect } from "effect"
 
 import type { StateComparator } from "../driver/types.js"
+import type { ReplayStep } from "./replay-actions.js"
 import type { ReplayActionContext, StateMismatchError } from "./replay-errors.js"
-import { stateMismatchError, TraceReplayError } from "./replay-errors.js"
-import { normalizeTraceState } from "./trace-state.js"
+import { stateMismatchError, TraceReplayError, withTraceReplayError } from "./replay-errors.js"
 
-export interface StateCheck<S> {
+export interface StateCheck<S, E = never, R = never> {
   readonly compareState: StateComparator<S>
-  readonly deserializeState: (raw: unknown) => Effect.Effect<S>
+  readonly deserializeState: (raw: unknown) => Effect.Effect<S, E, R>
 }
-
-type RawState = { readonly [key: string]: unknown }
 
 interface StateReadableDriver<S, E, R> {
   readonly getState?: () => Effect.Effect<S, E, R>
 }
 
-interface CheckReplayStateOptions<S, E, R> {
-  readonly rawState: RawState
-  readonly statePath: ReadonlyArray<string>
-  readonly driver: StateReadableDriver<S, E, R>
-  readonly stateCheck: StateCheck<S>
+interface CheckReplayStateOptions<S, DriverE, DriverR, StateE, StateR> {
+  readonly step: ReplayStep
+  readonly driver: StateReadableDriver<S, DriverE, DriverR>
+  readonly stateCheck: StateCheck<S, StateE, StateR>
   readonly context: ReplayActionContext
   readonly seed: string
 }
 
 /** @internal */
-export const projectState = normalizeTraceState
-
-/** @internal */
-export const checkReplayState = <S, E, R>(
-  opts: CheckReplayStateOptions<S, E, R>
-): Effect.Effect<void, E | StateMismatchError | TraceReplayError, R> =>
+export const checkReplayState = <S, DriverE, DriverR, StateE = never, StateR = never>(
+  opts: CheckReplayStateOptions<S, DriverE, DriverR, StateE, StateR>
+): Effect.Effect<void, DriverE | StateMismatchError | TraceReplayError, DriverR | StateR> =>
   Effect.gen(function*() {
     if (opts.driver.getState === undefined) {
       return yield* new TraceReplayError({
@@ -43,7 +37,11 @@ export const checkReplayState = <S, E, R>(
       })
     }
 
-    const specState = yield* opts.stateCheck.deserializeState(projectState(opts.rawState, opts.statePath))
+    const specState = yield* withTraceReplayError(
+      opts.stateCheck.deserializeState(opts.step.specState),
+      opts.context,
+      (cause) => `Failed to deserialize spec state: ${String(cause)}`
+    )
     const implState = yield* opts.driver.getState()
 
     if (!opts.stateCheck.compareState(specState, implState)) {
