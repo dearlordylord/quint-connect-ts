@@ -31,7 +31,7 @@ pnpm add @firfi/quint-connect effect
 pnpm add -D @effect/vitest
 ```
 
-**Requirements:** Node.js 22+ (for lossless evaluator JSON decoding), ESM (`"type": "module"` in package.json), [Quint CLI](https://github.com/informalsystems/quint) (`npx @informalsystems/quint` runs without global install).
+**Requirements:** Node.js 22+ (for lossless evaluator JSON decoding), ESM (`"type": "module"` in package.json), [Quint CLI](https://github.com/informalsystems/quint) (`npx @informalsystems/quint` runs without global install). The package targets Effect 3 (`effect@^3.0.0`); existing run-mode calls remain source-compatible when `generation` is omitted.
 
 ## Usage
 
@@ -151,6 +151,8 @@ console.log(result.tracesReplayed, result.seed)
 
 No `Effect.scoped` or `Effect.provide` needed — resource management and Node.js services are handled internally.
 
+Quint CLI and compiled-evaluator subprocesses share the same scoped lifecycle. Normal completion removes exit and signal hooks; interruption, `SIGINT`, `SIGTERM`, or parent exit terminates the spawned process group on POSIX and the process tree with `taskkill` on Windows before propagating the signal. This prevents evaluator processes from being left behind after cancelled tests.
+
 See [examples/counter/counter-effect.test.ts](examples/counter/counter-effect.test.ts) for a complete runnable vitest example.
 
 ### Vitest Helpers
@@ -232,6 +234,8 @@ quintRun({
 ```
 
 `quint test` does not provide Quint's `--mbt` instrumentation. The selected Quint test must therefore store its replay action in the state as `{ tag: string, value: record }`; point the driver at that field with `config: () => ({ nondetPath: ["replayAction"] })`. Both generation modes use the same validated ITF and replay pipeline. Test mode accepts `maxSamples`; run-only fields such as `nTraces`, `maxSteps`, `init`, `step`, invariants, witnesses, and `compiledInput` are excluded by the public TypeScript contract.
+
+Executable selection is exact: `quintBin` overrides `QUINT_BIN`, which overrides `quint` on `PATH`. Only an unconfigured, missing PATH command falls back to `npx @informalsystems/quint`; an explicit missing executable fails without fallback. Backend selection is similarly explicit: `backend` overrides `QUINT_BACKEND`, then defaults to `typescript`, and an invalid environment value fails before temporary files or subprocesses are created.
 
 `run` additionally accepts:
 
