@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Predicate, Schema } from "effect"
 import * as path from "node:path"
 import { expect } from "vitest"
 
@@ -70,7 +70,7 @@ describe("Integration: counter spec", () => {
         seed: "1",
         driverFactory: createCounterDriverFactory(),
         stateCheck: stateCheck(
-          (raw) => Schema.decodeUnknown(CounterStateSchema)(raw).pipe(Effect.orDie),
+          (raw) => Schema.decodeUnknownEffect(CounterStateSchema)(raw).pipe(Effect.orDie),
           (spec, impl) => spec.count === impl.count
         )
       })
@@ -90,7 +90,7 @@ describe("Integration: counter spec", () => {
         concurrency: 3,
         driverFactory: createCounterDriverFactory(),
         stateCheck: stateCheck(
-          (raw) => Schema.decodeUnknown(CounterStateSchema)(raw).pipe(Effect.orDie),
+          (raw) => Schema.decodeUnknownEffect(CounterStateSchema)(raw).pipe(Effect.orDie),
           (spec, impl) => spec.count === impl.count
         )
       })
@@ -112,6 +112,28 @@ describe("Integration: counter spec", () => {
 
       expect(result.tracesReplayed).toBeGreaterThan(0)
       expect(result.seed).toBe("1")
+    }), { timeout: 30000 })
+
+  it.effect("generates and replays one exact named Quint test", () =>
+    Effect.gen(function*() {
+      const actions: Array<string> = []
+      const result = yield* quintRun({
+        spec: path.join(specDir, "counter.qnt"),
+        generation: { mode: "test", test: "incrementOnce" },
+        maxSamples: 1,
+        seed: "1",
+        driverFactory: defineDriver(
+          { init: { amount: ITFBigInt }, Increment: { amount: ITFBigInt } },
+          () => ({
+            init: () => Effect.sync(() => actions.push("init")),
+            Increment: () => Effect.sync(() => actions.push("Increment")),
+            config: () => ({ nondetPath: ["replayAction"] })
+          })
+        )
+      })
+
+      expect(result).toEqual({ tracesReplayed: 1, seed: "1" })
+      expect(actions).toEqual(["init", "Increment"])
     }), { timeout: 30000 })
 
   it.effect("fails with TraceReplayError on unknown action", () =>
@@ -227,7 +249,7 @@ describe("Integration: nested state spec with statePath", () => {
         seed: "1",
         driverFactory: createNestedDriverFactory(),
         stateCheck: stateCheck(
-          (raw) => Schema.decodeUnknown(NestedStateSchema)(raw).pipe(Effect.orDie),
+          (raw) => Schema.decodeUnknownEffect(NestedStateSchema)(raw).pipe(Effect.orDie),
           (spec, impl) => spec.count === impl.count
         )
       })
@@ -271,8 +293,8 @@ describe("Integration: multi-module spec with qualified state keys", () => {
         ),
         stateCheck: stateCheck(
           (raw) => {
-            if (typeof raw === "object" && raw !== null) {
-              rawStates.push({ ...raw as Record<string, unknown> })
+            if (Predicate.isObject(raw)) {
+              rawStates.push({ ...raw })
             }
             return Effect.succeed(raw)
           },
@@ -319,7 +341,7 @@ describe("Integration: multi-module spec with qualified state keys", () => {
         seed: "1",
         driverFactory: factory,
         stateCheck: stateCheck(
-          (raw) => Schema.decodeUnknown(MultimodStateSchema)(raw).pipe(Effect.orDie),
+          (raw) => Schema.decodeUnknownEffect(MultimodStateSchema)(raw).pipe(Effect.orDie),
           (spec, impl) => spec["multimod::ctr::count"] === impl["multimod::ctr::count"]
         )
       })
@@ -370,10 +392,10 @@ describe("Integration: statePath through qualified key", () => {
         driverFactory: factory,
         stateCheck: stateCheck(
           (raw) => {
-            if (typeof raw === "object" && raw !== null) {
-              rawStates.push({ ...raw as Record<string, unknown> })
+            if (Predicate.isObject(raw)) {
+              rawStates.push({ ...raw })
             }
-            return Schema.decodeUnknown(MultimodNestedInnerSchema)(raw).pipe(Effect.orDie)
+            return Schema.decodeUnknownEffect(MultimodNestedInnerSchema)(raw).pipe(Effect.orDie)
           },
           (spec, impl) => spec.count === impl.count
         )
@@ -418,7 +440,7 @@ describe("Integration: partial config", () => {
         seed: "1",
         driverFactory: createPartialConfigDriverFactory(),
         stateCheck: stateCheck(
-          (raw) => Schema.decodeUnknown(NestedStateSchema)(raw).pipe(Effect.orDie),
+          (raw) => Schema.decodeUnknownEffect(NestedStateSchema)(raw).pipe(Effect.orDie),
           (spec, impl) => spec.count === impl.count
         )
       })

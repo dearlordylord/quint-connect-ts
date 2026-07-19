@@ -12,18 +12,10 @@ export const resolveNestedValue = (
 ): unknown => {
   let current: unknown = obj
   for (const key of path) {
-    if (!Predicate.isRecord(current) || !(key in current)) {
+    if (!Predicate.isObject(current) || !(key in current)) {
       return undefined
     }
     current = current[key]
   }
   return current
 }
-
-export const normalizeTraceState = (
-  rawState: TraceStateRecord,
-  statePath: ReadonlyArray<string>
-): unknown =>
-  statePath.length > 0
-    ? resolveNestedValue(rawState, statePath)
-    : stripMetadata(rawState)

@@ -37,7 +37,7 @@ describe("Counter MBT (Effect)", () => {
     spec: path.join(import.meta.dirname, "specs", "counter.qnt"),
     driverFactory: counterDriver,
     stateCheck: stateCheck(
-      (raw) => Schema.decodeUnknown(CounterState)(raw).pipe(Effect.orDie),
+      (raw) => Schema.decodeUnknownEffect(CounterState)(raw).pipe(Effect.orDie),
       (spec, impl) => spec.count === impl.count
     )
   })

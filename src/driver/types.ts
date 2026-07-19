@@ -11,7 +11,7 @@ export const defaultConfig: Config = {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SchemaFields = { readonly [key: string]: Schema.Schema<any, any, never> }
+type SchemaFields = { readonly [key: string]: Schema.Schema<any> }
 
 export type ActionPicks<Fields extends SchemaFields> = {
   readonly [K in keyof Fields]: Schema.Schema.Type<Fields[K]>
@@ -31,7 +31,7 @@ export type ActionDef<Fields extends SchemaFields, E = never, R = never> =
 
 interface AnyActionDefSchema {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  readonly picks: Schema.Struct<Record<string, Schema.Schema<any, any, never>>>
+  readonly picks: Schema.Struct<Record<string, Schema.Schema<any>>>
 }
 
 interface AnyActionDefHandler<E, R> {

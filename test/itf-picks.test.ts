@@ -10,7 +10,7 @@ describe("ItfOption", () => {
 
   it.effect("decodes Some(bigint)", () =>
     Effect.gen(function*() {
-      const result = yield* Schema.decodeUnknown(OptionBigInt)({
+      const result = yield* Schema.decodeUnknownEffect(OptionBigInt)({
         tag: "Some",
         value: { "#bigint": "42" }
       })
@@ -19,7 +19,7 @@ describe("ItfOption", () => {
 
   it.effect("decodes None to undefined", () =>
     Effect.gen(function*() {
-      const result = yield* Schema.decodeUnknown(OptionBigInt)({
+      const result = yield* Schema.decodeUnknownEffect(OptionBigInt)({
         tag: "None",
         value: { "#tup": [] }
       })
@@ -29,13 +29,13 @@ describe("ItfOption", () => {
   it.effect("works with plain string inner schema", () =>
     Effect.gen(function*() {
       const OptionString = ItfOption(Schema.String)
-      const some = yield* Schema.decodeUnknown(OptionString)({
+      const some = yield* Schema.decodeUnknownEffect(OptionString)({
         tag: "Some",
         value: "hello"
       })
       expect(some).toBe("hello")
 
-      const none = yield* Schema.decodeUnknown(OptionString)({
+      const none = yield* Schema.decodeUnknownEffect(OptionString)({
         tag: "None",
         value: { "#tup": [] }
       })
@@ -70,8 +70,8 @@ describe("pick decoding", () => {
 
       const result = yield* decode({}).pipe(
         Effect.match({
-          onFailure: () => "failed" as const,
-          onSuccess: () => "succeeded" as const
+          onFailure: (): "failed" => "failed",
+          onSuccess: (): "succeeded" => "succeeded"
         })
       )
 
@@ -120,6 +120,15 @@ describe("pick decoding", () => {
     )).rejects.toThrow("Pick \"amount\" validation failed")
   })
 
+  it("decodeStandardPicks supports asynchronous Standard Schema validation", async () => {
+    const result = await decodeStandardPicks(
+      { label: "hello" },
+      { label: z.string().transform(async (value) => value.toUpperCase()) }
+    )
+
+    expect(result).toEqual({ label: "HELLO" })
+  })
+
   it("pickFrom preserves raw-mode Quint Option decoding", () => {
     const picks = new Map<string, unknown>([
       ["amount", { tag: "Some", value: { "#bigint": "9" } }],
@@ -141,6 +150,6 @@ describe("pick decoding", () => {
 
   it("pickFrom validates malformed Some values instead of treating them as None", () => {
     expect(() => pickFrom(new Map([["amount", { tag: "Some" }]]), "amount", z.bigint()))
-      .toThrow("pickFrom \"amount\" validation failed")
+      .toThrow("pickFrom \"amount\": expected Option tag \"Some\" or \"None\", got: \"Some\"")
   })
 })

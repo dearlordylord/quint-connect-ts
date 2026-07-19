@@ -1,5 +1,4 @@
 import { Effect } from "effect"
-import { execSync } from "node:child_process"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -8,12 +7,20 @@ import type { ItfTrace } from "../itf/schema.js"
 import { compiledEvaluatorTraceAdapter } from "./compiled-evaluator-adapter.js"
 import type { QuintNotFoundError } from "./errors.js"
 import { QuintError } from "./errors.js"
+import { platformProcess } from "./platform-process.js"
 import { quintCliTraceAdapter } from "./quint-cli-adapter.js"
 import type { RunOptions } from "./run-options.js"
 import type { TraceGenerationAdapter } from "./trace-adapter.js"
 
 export { QuintError, QuintNotFoundError } from "./errors.js"
-export type { RunOptions } from "./run-options.js"
+export type {
+  QuintRunGeneration,
+  QuintTestGeneration,
+  RunGenerationOptions,
+  RunOptions,
+  TestGenerationOptions,
+  TraceGenerationMode
+} from "./run-options.js"
 
 const traceGenerationAdapters: ReadonlyArray<TraceGenerationAdapter> = [
   compiledEvaluatorTraceAdapter,
@@ -54,27 +61,26 @@ const generateTracesWithTempDir = (
   )
 
 /** Warn if zombie quint_evaluator processes are running because they cause large slowdowns. */
-const warnZombieEvaluators = (): void => {
-  try {
-    const result = execSync("pgrep -c quint_evaluator", { stdio: ["pipe", "pipe", "pipe"] }).toString().trim()
-    const count = parseInt(result, 10)
+const warnZombieEvaluators = (): Effect.Effect<void> =>
+  Effect.gen(function*() {
+    const count = yield* platformProcess.countEvaluatorProcesses
     if (count > 0) {
-      console.warn(
-        `[quint-connect] WARNING: Found ${count} running quint_evaluator process(es). `
-          + `These consume 100% CPU each and will slow down this run by ~40x. `
-          + `Kill them: killall -9 quint_evaluator`
-      )
+      yield* Effect.sync(() => {
+        console.warn(
+          `[quint-connect] WARNING: Found ${count} running quint_evaluator process(es). `
+            + `These consume 100% CPU each and will slow down this run by ~40x. `
+            + `Kill them: ${platformProcess.evaluatorCleanupHint}`
+        )
+      })
     }
-  } catch {
-    // pgrep returns exit code 1 when no processes match.
-  }
-}
+  })
 
 export const generateTraces = (
   opts: RunOptions
-): Effect.Effect<ReadonlyArray<ItfTrace>, QuintError | QuintNotFoundError> => {
-  warnZombieEvaluators()
-  return opts.traceDir !== undefined
-    ? generateTracesWithTraceDir(opts, opts.traceDir)
-    : generateTracesWithTempDir(opts)
-}
+): Effect.Effect<ReadonlyArray<ItfTrace>, QuintError | QuintNotFoundError> =>
+  Effect.gen(function*() {
+    yield* warnZombieEvaluators()
+    return yield* opts.traceDir !== undefined
+      ? generateTracesWithTraceDir(opts, opts.traceDir)
+      : generateTracesWithTempDir(opts)
+  })

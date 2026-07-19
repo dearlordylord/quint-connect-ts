@@ -22,7 +22,8 @@ export const dispatchReplayAction = <E, R>(
     if (actionDef === undefined) {
       // Rust backend emits "step" when the spec's step action body is a direct no-op.
       if (shouldSkipMissingAction(action)) {
-        return "skipped" as const
+        const result: DispatchReplayResult = "skipped"
+        return result
       }
 
       return yield* traceReplayError(context, unknownActionMessage(action))
@@ -40,5 +41,6 @@ export const dispatchReplayAction = <E, R>(
       (cause) => `Action handler failed: ${String(cause)}`
     )
 
-    return "dispatched" as const
+    const result: DispatchReplayResult = "dispatched"
+    return result
   })

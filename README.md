@@ -13,7 +13,7 @@
 
 Model-based testing framework connecting [Quint](https://github.com/informalsystems/quint) specifications to TypeScript implementations. The TypeScript equivalent of [quint-connect](https://github.com/informalsystems/quint-connect) (Rust).
 
-Spawns `quint run --mbt`, parses ITF traces, replays them through a user-implemented driver, and optionally compares spec state against implementation state after every step.
+Spawns `quint run --mbt` or one exact named `quint test`, parses ITF traces, replays them through a user-implemented driver, and optionally compares spec state against implementation state after every step.
 
 ## Install
 
@@ -24,14 +24,16 @@ pnpm add @firfi/quint-connect
 # If using Zod ITF schemas (ITFBigInt, ITFSet, ITFMap) — requires Zod 4+:
 pnpm add zod
 
-# For Effect API:
-pnpm add @firfi/quint-connect effect
+# For the Effect 4 prerelease API (npm latest remains on Effect 3):
+pnpm add @firfi/quint-connect@effect4 effect@4.0.0-beta.99
 
 # For Effect vitest helper (quintIt):
-pnpm add -D @effect/vitest
+pnpm add -D @effect/vitest@4.0.0-beta.99
 ```
 
-**Requirements:** Node.js 21+ (for `import.meta.dirname`), ESM (`"type": "module"` in package.json), [Quint CLI](https://github.com/informalsystems/quint) (`npx @informalsystems/quint` runs without global install).
+The `effect4` prerelease line targets Effect `4.0.0-beta.99`. The untagged `latest` package continues to distribute the Effect 3 build.
+
+**Requirements:** Node.js 22+ (for lossless evaluator JSON decoding), ESM (`"type": "module"` in package.json), [Quint CLI](https://github.com/informalsystems/quint) (`npx @informalsystems/quint` runs without global install).
 
 ## Usage
 
@@ -140,7 +142,7 @@ const result = await Effect.runPromise(
       }
     ),
     stateCheck: stateCheck(
-      (raw) => Schema.decodeUnknown(CounterState)(raw).pipe(Effect.orDie),
+      (raw) => Schema.decodeUnknownEffect(CounterState)(raw).pipe(Effect.orDie),
       (spec, impl) => spec.count === impl.count,
     ),
   })
@@ -194,6 +196,7 @@ The first argument is the test function from your own vitest/`@effect/vitest` in
 - **`defineDriver(schema, factory)`** — define a driver with per-field Effect Schema picks. Same shape as simple API but handlers return `Effect`.
 - **`stateCheck(deserialize, compare)`** — same as simple API but `deserialize` returns `Effect<S>`.
 - **`quintRun(opts)`** — generate traces via `quint run --mbt` and replay them through a driver. Returns `Effect<{ tracesReplayed, seed }>`.
+- **`quintRunWithTraceGeneration(opts)`** — the injectable orchestration variant. It requires the `TraceGeneration` Effect service; provide a fake layer to test generation and replay without subprocesses or files.
 - **`generateTraces(opts)`** — just spawn quint and parse ITF traces without replaying.
 - **`ItfOption(schema)`** — Effect Schema that decodes Quint's Option variant to `A | undefined`.
 - **`ITFBigInt`**, **`ITFSet(item)`**, **`ITFMap(key, value)`** — ITF type schemas.
@@ -205,18 +208,32 @@ Shared by `run`, `quintRun`, and `generateTraces`:
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `spec` | `string` | *required* | Path to the `.qnt` spec file |
+| `generation` | `{ mode: "test", test: string }` | `{ mode: "run" }` | Generate replay traces from exactly one named Quint test instead of `quint run --mbt`. |
 | `seed` | `string` | random | RNG seed for reproducible runs. Must be a big integer: decimal (`"42"`) or hex (`"0x138ff8c9"`). Also reads `QUINT_SEED` env var as fallback. When omitted, a random hex seed is generated and returned in `result.seed` for reproducibility. |
-| `nTraces` | `number` | `10` | Number of traces to generate |
-| `maxSteps` | `number` | quint default | Maximum steps per trace |
-| `maxSamples` | `number` | quint default | Maximum samples before giving up on finding a valid step |
-| `init` | `string` | quint default | Name of the init action |
-| `step` | `string` | quint default | Name of the step action |
+| `nTraces` | `number` | `10` | Run mode only: number of simulation traces to generate |
+| `maxSteps` | `number` | quint default | Run mode only: maximum steps per trace |
+| `maxSamples` | `number` | run: quint default; test: `10` | Run mode: maximum samples before giving up on a valid step. Test mode: successful randomized test executions requested from Quint. |
+| `init` | `string` | quint default | Run mode only: name of the init action |
+| `step` | `string` | quint default | Run mode only: name of the step action |
 | `main` | `string` | quint default | Name of the main module. Required when the `.qnt` file contains multiple modules. |
 | `backend` | `"typescript" \| "rust"` | `"typescript"` | Simulation backend. TypeScript works out of the box; `"rust"` requires the Rust evaluator. |
-| `invariants` | `string[]` | — | Invariant names to check during simulation |
-| `witnesses` | `string[]` | — | Witness names to report |
+| `invariants` | `string[]` | — | Run mode only: invariant names to check during simulation |
+| `witnesses` | `string[]` | — | Run mode only: witness names to report |
 | `verbose` | `boolean` | `false` | Sets `QUINT_VERBOSE=true`. Quint logs detailed simulation output to stderr. |
 | `traceDir` | `string` | temp dir | Directory to write ITF trace files. Files are kept after run. Useful for debugging — inspect generated traces when a test fails. |
+| `compiledInput` | `string` | — | Run mode only: path to Quint's compiled Rust evaluator input. When present and readable, replay uses the compiled evaluator directly. |
+
+Named-test mode uses an escaped, anchored `quint test --match` expression, so only the requested test runs:
+
+```ts
+quintRun({
+  ...options,
+  generation: { mode: "test", test: "commitScenario" },
+  maxSamples: 10,
+})
+```
+
+`quint test` does not provide Quint's `--mbt` instrumentation. The selected Quint run must therefore store its replay action in the state as `{ tag: string, value: record }`; point the driver at that field with `config: () => ({ nondetPath: ["replayAction"] })`. Both generation modes then use the same validated ITF and replay pipeline. Test mode accepts `maxSamples`; run-only fields such as `nTraces`, `maxSteps`, `init`, `step`, invariants, witnesses, and `compiledInput` are excluded by the public TypeScript contract.
 
 `run` additionally accepts:
 
@@ -261,7 +278,7 @@ With the **TypeScript backend** (default), some traces report an empty `mbt::act
 
 ### Additional Exports
 
-**`@firfi/quint-connect/effect`** also exports: `ITFList`, `ITFTuple`, `ITFVariant`, `ITFUnserializable`, `ItfTrace`, `MbtMeta`, `UntypedTraceSchema`, `generateTraces`, `defaultConfig`.
+**`@firfi/quint-connect/effect`** also exports: `ITFList`, `ITFTuple`, `ITFVariant`, `ITFUnserializable`, `ItfTrace`, `MbtMeta`, `UntypedTraceSchema`, `generateTraces`, `TraceGeneration`, `traceGenerationLayer`, `defaultConfig`.
 
 **`@firfi/quint-connect`** also exports: `transformITFValue`, `defaultConfig`.
 
@@ -275,9 +292,9 @@ The library exports typed error classes for programmatic error handling:
 |---|---|
 | `TraceReplayError` | Unknown action, handler failure, decode failure |
 | `StateMismatchError` | `compareState` returns `false` |
-| `QuintError` | `quint run` exits non-zero (includes stderr output) |
+| `QuintError` | `quint run` or `quint test` exits non-zero (includes stderr output) |
 | `QuintNotFoundError` | `quint` CLI not found |
-| `NoTracesError` | `quint run` produced no traces |
+| `NoTracesError` | trace generation produced no traces |
 
 **Simple API** — use `instanceof`:
 
