@@ -1,10 +1,10 @@
 import spawn from "cross-spawn"
-import { Effect, Predicate } from "effect"
+import { Effect, Predicate, Schema } from "effect"
 
 import { QuintError, QuintNotFoundError } from "./errors.js"
 import { platformProcess } from "./platform-process.js"
 import type { PlatformProcessBoundary } from "./platform-process.js"
-import type { RunGenerationOptions, RunOptions, TestGenerationOptions } from "./run-options.js"
+import type { RunGenerationOptions, TestGenerationOptions, TraceGenerationOptions } from "./run-options.js"
 import {
   DEFAULT_MAX_SAMPLES,
   DEFAULT_N_TRACES,
@@ -22,7 +22,8 @@ interface QuintProcessResult {
 interface QuintCliAdapterDeps {
   readonly runQuintProcess: (
     args: ReadonlyArray<string>,
-    verbose: boolean
+    verbose: boolean,
+    quintBin?: string | undefined
   ) => Effect.Effect<QuintProcessResult, QuintNotFoundError>
 }
 
@@ -47,7 +48,9 @@ type SpawnQuintProcess = (
   options: { readonly env: NodeJS.ProcessEnv; readonly detached: boolean }
 ) => QuintProcess
 
-const resolveBackend = (opts: RunOptions): "typescript" | "rust" => {
+const QuintBinary = Schema.UndefinedOr(Schema.String.check(Schema.isNonEmpty()))
+
+const resolveBackend = (opts: TraceGenerationOptions): "typescript" | "rust" => {
   const envBackend = process.env["QUINT_BACKEND"]
   return opts.backend ?? (envBackend === "typescript" || envBackend === "rust" ? envBackend : "typescript")
 }
@@ -126,7 +129,7 @@ export const buildTestArgs = (
 }
 
 const buildTraceArgs = (
-  opts: RunOptions,
+  opts: TraceGenerationOptions,
   outDir: string
 ): ReadonlyArray<string> => isQuintTestGeneration(opts) ? buildTestArgs(opts, outDir) : buildRunArgs(opts, outDir)
 
@@ -143,51 +146,62 @@ export const makeRunQuintProcess = (
       on: proc.on.bind(proc)
     }
   },
-  processBoundary: PlatformProcessBoundary = platformProcess
+  processBoundary: PlatformProcessBoundary = platformProcess,
+  getEnvironment: () => NodeJS.ProcessEnv = () => process.env
 ) =>
 (
   args: ReadonlyArray<string>,
-  verbose: boolean
+  verbose: boolean,
+  quintBin?: string | undefined
 ): Effect.Effect<QuintProcessResult, QuintNotFoundError> =>
-  Effect.callback<QuintProcessResult, QuintNotFoundError>((resume) => {
-    const env = verbose ? { ...process.env, QUINT_VERBOSE: "true" } : process.env
-    let completeProcess = () => {}
-    const startProc = (cmd: string, cmdArgs: ReadonlyArray<string>) => {
-      const proc = spawnProcess(cmd, cmdArgs, { env, detached: processBoundary.detached })
-      let stderr = ""
-      proc.stdout.resume()
-      proc.stderr.on("data", (chunk: Buffer) => {
-        stderr += chunk.toString()
-      })
-      proc.on("close", (code) => {
-        if (proc !== activeProc) {
-          return
-        }
-        completeProcess()
-        resume(Effect.succeed({ exitCode: code ?? 1, stderr }))
-      })
-      proc.on("error", (e) => {
-        if (proc !== activeProc) {
-          return
-        }
-        if (Predicate.isObject(e) && e["code"] === "ENOENT" && cmd === processBoundary.commandName("quint")) {
-          console.warn(
-            "[quint-connect] 'quint' not found on PATH, falling back to npx (slower). Install globally: npm i -g @informalsystems/quint"
-          )
-          activeProc = startProc(processBoundary.commandName("npx"), ["@informalsystems/quint", ...cmdArgs])
-        } else {
+  Effect.gen(function*() {
+    const baseEnv = getEnvironment()
+    const env = verbose ? { ...baseEnv, QUINT_VERBOSE: "true" } : baseEnv
+    const configuredQuintBin = yield* Schema.decodeUnknownEffect(QuintBinary)(quintBin ?? baseEnv["QUINT_BIN"]).pipe(
+      Effect.mapError((error) =>
+        new QuintNotFoundError({ message: `Invalid Quint executable configuration: ${error}` })
+      )
+    )
+    const defaultQuintCommand = processBoundary.commandName("quint")
+    return yield* Effect.callback<QuintProcessResult, QuintNotFoundError>((resume) => {
+      let completeProcess = () => {}
+      const startProc = (cmd: string, cmdArgs: ReadonlyArray<string>, allowNpxFallback: boolean) => {
+        const proc = spawnProcess(cmd, cmdArgs, { env, detached: processBoundary.detached })
+        let stderr = ""
+        proc.stdout.resume()
+        proc.stderr.on("data", (chunk: Buffer) => {
+          stderr += chunk.toString()
+        })
+        proc.on("close", (code) => {
+          if (proc !== activeProc) {
+            return
+          }
           completeProcess()
-          resume(Effect.fail(new QuintNotFoundError({ message: `Failed to start quint: ${e}` })))
-        }
-      })
-      return proc
-    }
+          resume(Effect.succeed({ exitCode: code ?? 1, stderr }))
+        })
+        proc.on("error", (e) => {
+          if (proc !== activeProc) {
+            return
+          }
+          if (Predicate.isObject(e) && e["code"] === "ENOENT" && allowNpxFallback) {
+            console.warn(
+              "[quint-connect] 'quint' not found on PATH, falling back to npx (slower). Install globally: npm i -g @informalsystems/quint"
+            )
+            activeProc = startProc(processBoundary.commandName("npx"), ["@informalsystems/quint", ...cmdArgs], false)
+          } else {
+            completeProcess()
+            resume(Effect.fail(new QuintNotFoundError({ message: `Failed to start quint: ${e}` })))
+          }
+        })
+        return proc
+      }
 
-    let activeProc = startProc(processBoundary.commandName("quint"), [...args])
-    const lifecycle = processBoundary.makeLifecycle(() => activeProc)
-    completeProcess = lifecycle.complete
+      let activeProc = startProc(configuredQuintBin ?? defaultQuintCommand, [...args], configuredQuintBin === undefined)
+      const lifecycle = processBoundary.makeLifecycle(() => activeProc)
+      completeProcess = lifecycle.complete
 
-    return lifecycle.interrupt
+      return lifecycle.interrupt
+    })
   })
 
 const runQuintProcess = makeRunQuintProcess()
@@ -199,7 +213,7 @@ export const makeQuintCliTraceAdapter = (
   generate: (opts, outDir) =>
     Effect.gen(function*() {
       const args = buildTraceArgs(opts, outDir)
-      const { exitCode, stderr } = yield* deps.runQuintProcess(args, opts.verbose === true)
+      const { exitCode, stderr } = yield* deps.runQuintProcess(args, opts.verbose === true, opts.quintBin)
       if (exitCode !== 0) {
         const command = isQuintTestGeneration(opts) ? "quint test" : "quint run"
         return yield* new QuintError({

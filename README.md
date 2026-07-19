@@ -33,7 +33,7 @@ pnpm add -D @effect/vitest@4.0.0-beta.99
 
 The `effect4` prerelease line targets Effect `4.0.0-beta.99`. The untagged `latest` package continues to distribute the Effect 3 build.
 
-**Requirements:** Node.js 22+ (for lossless evaluator JSON decoding), ESM (`"type": "module"` in package.json), [Quint CLI](https://github.com/informalsystems/quint) (`npx @informalsystems/quint` runs without global install).
+**Requirements:** Node.js 22+ (for lossless evaluator JSON decoding), ESM (`"type": "module"` in package.json), and the [Quint CLI](https://github.com/informalsystems/quint). The launcher uses `quintBin`, then `QUINT_BIN`, then `quint` on `PATH`; only when the default `PATH` lookup fails does it fall back to `npx @informalsystems/quint`.
 
 ## Usage
 
@@ -217,6 +217,7 @@ Shared by `run`, `quintRun`, and `generateTraces`:
 | `step` | `string` | quint default | Run mode only: name of the step action |
 | `main` | `string` | quint default | Name of the main module. Required when the `.qnt` file contains multiple modules. |
 | `backend` | `"typescript" \| "rust"` | `"typescript"` | Simulation backend. TypeScript works out of the box; `"rust"` requires the Rust evaluator. |
+| `quintBin` | `string` | `QUINT_BIN`, then `quint` on `PATH` | Exact Quint executable path or command. An explicit value never falls back to `npx`, which is useful for pinned mise/Nix/toolchain installations. |
 | `invariants` | `string[]` | — | Run mode only: invariant names to check during simulation |
 | `witnesses` | `string[]` | — | Run mode only: witness names to report |
 | `verbose` | `boolean` | `false` | Sets `QUINT_VERBOSE=true`. Quint logs detailed simulation output to stderr. |
@@ -335,7 +336,7 @@ The default `nTraces` is 10, which would generate 10 identical traces for a dete
 
 The default backend is `"typescript"` (zero extra deps, works out of the box). Override with `backend: "rust"` for the more mature Rust evaluator (requires separate download).
 
-**Known issue:** `--backend typescript` corrupts `mbt::actionTaken` for specs where the step action is a single body (not `any { ... }` with named disjuncts). All states will show `actionTaken: "init"` instead of the actual action name. This is a [Quint bug](https://github.com/informalsystems/quint) in the TypeScript simulator's `Context.shift()` — it doesn't reset metadata between steps. Specs using `any { ... }` are unaffected.
+**Known issue:** `--backend typescript` corrupts `mbt::actionTaken` for specs where the step action is a single body (not `any { ... }` with named disjuncts). All states will show `actionTaken: "init"` instead of the actual action name. This is a [Quint bug](https://github.com/informalsystems/quint) in the TypeScript simulator's `Context.shift()` — it doesn't reset metadata between steps. Wrap the step in `any { NamedAction, }` so action names are retained, or use `backend: "rust"`.
 
 ## License
 

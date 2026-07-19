@@ -72,6 +72,9 @@ importers:
       eslint-plugin-sort-destructure-keys:
         specifier: ^2.0.0
         version: 2.0.0(eslint@9.39.3)
+      fast-check:
+        specifier: 4.9.0
+        version: 4.9.0
       husky:
         specifier: ^9.1.7
         version: 9.1.7

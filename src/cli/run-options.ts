@@ -14,11 +14,14 @@ interface CommonGenerationOptions {
   readonly seed?: string | undefined
   readonly main?: string | undefined
   readonly backend?: "typescript" | "rust" | undefined
+  /** Exact Quint executable path or command. Takes precedence over QUINT_BIN and PATH lookup. */
+  readonly quintBin?: string | undefined
   readonly verbose?: boolean | undefined
   readonly traceDir?: string | undefined
 }
 
-export interface RunGenerationOptions extends CommonGenerationOptions {
+/** Backwards-compatible options for quint run generation. */
+export interface RunOptions extends CommonGenerationOptions {
   readonly generation?: QuintRunGeneration | undefined
   readonly nTraces?: number | undefined
   readonly maxSteps?: number | undefined
@@ -39,6 +42,8 @@ export interface RunGenerationOptions extends CommonGenerationOptions {
   readonly compiledInput?: string | undefined
 }
 
+export type RunGenerationOptions = RunOptions
+
 export interface TestGenerationOptions extends CommonGenerationOptions {
   readonly generation: QuintTestGeneration
   /** Number of successful randomized executions requested from `quint test`. */
@@ -52,12 +57,13 @@ export interface TestGenerationOptions extends CommonGenerationOptions {
   readonly compiledInput?: never
 }
 
-export type RunOptions = RunGenerationOptions | TestGenerationOptions
+/** Mode-safe generation options accepted by public generation and replay entrypoints. */
+export type TraceGenerationOptions = RunOptions | TestGenerationOptions
 
-export const isQuintTestGeneration = (opts: RunOptions): opts is TestGenerationOptions =>
+export const isQuintTestGeneration = (opts: TraceGenerationOptions): opts is TestGenerationOptions =>
   opts.generation?.mode === "test"
 
-export const isQuintRunGeneration = (opts: RunOptions): opts is RunGenerationOptions => !isQuintTestGeneration(opts)
+export const isQuintRunGeneration = (opts: TraceGenerationOptions): opts is RunOptions => !isQuintTestGeneration(opts)
 
 export const DEFAULT_N_TRACES = 10
 export const DEFAULT_TEST_MAX_SAMPLES = 10

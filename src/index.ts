@@ -19,7 +19,10 @@ export type {
   RunOptions,
   SimpleActionMap,
   SimpleDriver,
+  SimpleGenerationOptions,
   SimpleRunOptions,
+  SimpleTestOptions,
   TestGenerationOptions,
-  TraceGenerationMode
+  TraceGenerationMode,
+  TraceGenerationOptions
 } from "./simple.js"

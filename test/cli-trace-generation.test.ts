@@ -1,4 +1,5 @@
 import { Effect, Fiber } from "effect"
+import fc from "fast-check"
 import { EventEmitter } from "node:events"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -18,7 +19,7 @@ import {
   makeQuintCliTraceAdapter,
   makeRunQuintProcess
 } from "../src/cli/quint-cli-adapter.js"
-import type { RunOptions, TestGenerationOptions } from "../src/cli/run-options.js"
+import type { RunOptions, TestGenerationOptions, TraceGenerationOptions } from "../src/cli/run-options.js"
 import { readTraceFiles, writeTraceFiles } from "../src/cli/trace-files.js"
 import { defaultConfig } from "../src/driver/types.js"
 import { defineDriver } from "../src/effect.js"
@@ -53,6 +54,10 @@ class FakeEvaluatorProcess extends EventEmitter {
   constructor(readonly pid: number) {
     super()
   }
+}
+
+interface ExtendedRunOptions extends RunOptions {
+  readonly label: string
 }
 
 describe("trace file helpers", () => {
@@ -140,9 +145,15 @@ describe("Quint CLI trace adapter", () => {
   })
 
   it("exposes mode-specific options and rejects run-only fields in test mode", () => {
-    const acceptsRunOptions = (_opts: RunOptions): boolean => true
+    const acceptsGenerationOptions = (_opts: TraceGenerationOptions): boolean => true
 
-    expect(acceptsRunOptions({
+    const extended: ExtendedRunOptions = {
+      spec: "counter.qnt",
+      label: "consumer metadata"
+    }
+    expect(acceptsGenerationOptions(extended)).toBe(true)
+
+    expect(acceptsGenerationOptions({
       spec: "scenarios.qnt",
       generation: { mode: "test", test: "scenario" },
       maxSamples: 4
@@ -155,6 +166,86 @@ describe("Quint CLI trace adapter", () => {
       nTraces: 4
     }
     expect(invalidTestOptions.nTraces).toBe(4)
+  })
+
+  it("forwards an explicit Quint binary through the CLI adapter", async () => {
+    await withTempDir(async (dir) => {
+      const runQuintProcess = vi.fn(() => Effect.succeed({ exitCode: 0, stderr: "" }))
+      const adapter = makeQuintCliTraceAdapter({ runQuintProcess })
+
+      await Effect.runPromise(adapter.generate({
+        spec: "counter.qnt",
+        quintBin: "/mise/bin/quint"
+      }, dir))
+
+      expect(runQuintProcess).toHaveBeenCalledWith(
+        expect.arrayContaining(["run", "counter.qnt"]),
+        false,
+        "/mise/bin/quint"
+      )
+    })
+  })
+
+  it("selects Quint binary with options before environment before PATH", async () => {
+    const spawned: Array<{ readonly cmd: string; readonly proc: FakeProcess }> = []
+    const spawnProcess = vi.fn((cmd: string) => {
+      const proc = new FakeProcess(2000 + spawned.length)
+      spawned.push({ cmd, proc })
+      return proc
+    })
+    const runQuintProcess = makeRunQuintProcess(
+      spawnProcess,
+      undefined,
+      () => ({ QUINT_BIN: "/env/bin/quint" })
+    )
+
+    const explicitResult = Effect.runPromise(
+      runQuintProcess(["run", "counter.qnt"], false, "/option/bin/quint")
+    )
+    spawned[0]?.proc.emit("close", 0)
+    await expect(explicitResult).resolves.toEqual({ exitCode: 0, stderr: "" })
+
+    const environmentResult = Effect.runPromise(
+      runQuintProcess(["run", "counter.qnt"], false)
+    )
+    spawned[1]?.proc.emit("close", 0)
+    await expect(environmentResult).resolves.toEqual({ exitCode: 0, stderr: "" })
+
+    expect(spawned.map(({ cmd }) => cmd)).toEqual([
+      "/option/bin/quint",
+      "/env/bin/quint"
+    ])
+  })
+
+  it("does not silently fall back when an explicit Quint binary is missing", async () => {
+    const spawned: Array<{ readonly cmd: string; readonly proc: FakeProcess }> = []
+    const runQuintProcess = makeRunQuintProcess((cmd) => {
+      const proc = new FakeProcess(3000 + spawned.length)
+      spawned.push({ cmd, proc })
+      return proc
+    })
+    const result = Effect.runPromise(
+      runQuintProcess(["run", "counter.qnt"], false, "/missing/quint")
+    )
+
+    spawned[0]?.proc.emit("error", Object.assign(new Error("missing"), { code: "ENOENT" }))
+
+    await expect(result).rejects.toThrow("Failed to start quint")
+    expect(spawned.map(({ cmd }) => cmd)).toEqual(["/missing/quint"])
+  })
+
+  it("rejects an empty QUINT_BIN before spawning", async () => {
+    const spawnProcess = vi.fn(() => new FakeProcess(4000))
+    const runQuintProcess = makeRunQuintProcess(
+      spawnProcess,
+      undefined,
+      () => ({ QUINT_BIN: "" })
+    )
+
+    await expect(Effect.runPromise(runQuintProcess(["run", "counter.qnt"], false))).rejects.toThrow(
+      "Invalid Quint executable configuration"
+    )
+    expect(spawnProcess).not.toHaveBeenCalled()
   })
 
   it("reads generated trace files without invoking a real Quint binary", async () => {
@@ -346,6 +437,43 @@ progress
         unsafe: 9007199254740993n
       }]
     }])
+  })
+
+  it("preserves arbitrary evaluator integers and strings through ITF persistence", async () => {
+    await withTempDir(async (dir) => {
+      await fc.assert(
+        fc.asyncProperty(
+          fc.bigInt(),
+          fc.string(),
+          async (integer, label) => {
+            const output = JSON.stringify({
+              status: "ok",
+              bestTraces: [{
+                states: {
+                  vars: ["value", "label"],
+                  states: [{ value: "INTEGER_TOKEN", label }]
+                }
+              }]
+            }).replace("\"INTEGER_TOKEN\"", integer.toString())
+
+            const traces = await Effect.runPromise(normalizeEvaluatorOutput(output))
+            expect(traces).toEqual([{
+              vars: ["value", "label"],
+              states: [{ value: integer, label }]
+            }])
+
+            await Effect.runPromise(writeTraceFiles(dir, traces))
+            const persisted = JSON.parse(await readFile(join(dir, "trace_0.itf.json"), "utf-8"))
+            expect(persisted).toEqual({
+              vars: ["value", "label"],
+              states: [{ value: { "#bigint": integer.toString() }, label }]
+            })
+            await expect(Effect.runPromise(readTraceFiles(dir))).resolves.toEqual([persisted])
+          }
+        ),
+        { numRuns: 200 }
+      )
+    })
   })
 
   it.each([

@@ -1,9 +1,9 @@
 name: Model-Based Tests
 on:
   push:
-    branches: [main, master]
+    branches: [master, effect-4]
   pull_request:
-    branches: [main, master]
+    branches: [master, effect-4]
 
 jobs:
   mbt:
@@ -17,7 +17,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm check:test-tooling
-      - run: pnpm test
+      - run: pnpm run ci
         env:
           QUINT_BACKEND: typescript

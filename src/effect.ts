@@ -20,13 +20,14 @@ export type {
   RunGenerationOptions,
   RunOptions,
   TestGenerationOptions,
-  TraceGenerationMode
+  TraceGenerationMode,
+  TraceGenerationOptions
 } from "./cli/quint.js"
 export { generateTraces, QuintError, QuintNotFoundError } from "./cli/quint.js"
 export type { TraceGenerationService } from "./cli/trace-generation.js"
 export { TraceGeneration, traceGenerationLayer } from "./cli/trace-generation.js"
 
-export type { QuintRunOptions, StateCheck } from "./runner/runner.js"
+export type { QuintGenerationOptions, QuintRunOptions, QuintTestOptions, StateCheck } from "./runner/runner.js"
 export {
   NoTracesError,
   quintRun,

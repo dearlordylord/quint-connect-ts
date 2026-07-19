@@ -3,11 +3,11 @@ import { Context, Effect, Layer } from "effect"
 import type { ItfTrace } from "../itf/schema.js"
 import type { QuintError, QuintNotFoundError } from "./errors.js"
 import { generateTraces } from "./quint.js"
-import type { RunOptions } from "./run-options.js"
+import type { TraceGenerationOptions } from "./run-options.js"
 
 export interface TraceGenerationService {
   readonly generate: (
-    opts: RunOptions
+    opts: TraceGenerationOptions
   ) => Effect.Effect<ReadonlyArray<ItfTrace>, QuintError | QuintNotFoundError>
 }
 
@@ -19,7 +19,7 @@ export const traceGenerationLayer = Layer.sync(
   TraceGeneration,
   () =>
     TraceGeneration.of({
-      generate: Effect.fn("TraceGeneration.generate")(function*(opts: RunOptions) {
+      generate: Effect.fn("TraceGeneration.generate")(function*(opts: TraceGenerationOptions) {
         return yield* generateTraces(opts)
       })
     })
