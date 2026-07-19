@@ -261,19 +261,34 @@ progress
     }])
   })
 
-  it("preserves master's permissive normalization of evaluator trace entries", async () => {
+  it("losslessly decodes integer lexemes without changing other JSON primitives", async () => {
     const traces = await Effect.runPromise(normalizeEvaluatorOutput(`
-{"bestTraces":[{"states":{"vars":"invalid","states":[]}},{"states":{"vars":["counter"],"states":[{"counter":2}]}}]}
-`))
-    const missingTraces = await Effect.runPromise(normalizeEvaluatorOutput(`
-{"status":42,"bestTraces":"invalid"}
+{"status":"ok","bestTraces":[{"states":{"#meta":{"index":7,"label":"escaped \\\"value 42\\\""},"vars":["safe","negative","unsafe","decimal","exponent"],"states":[{"safe":42,"negative":-9007199254740993,"unsafe":9007199254740993,"decimal":1.25,"exponent":1e3}]}}]}
 `))
 
-    expect(traces).toEqual([
-      { vars: "invalid", states: [] },
-      { vars: ["counter"], states: [{ counter: 2n }] }
-    ])
-    expect(missingTraces).toEqual([])
+    expect(traces).toEqual([{
+      "#meta": { index: 7n, label: "escaped \"value 42\"" },
+      vars: ["safe", "negative", "unsafe", "decimal", "exponent"],
+      states: [{
+        decimal: 1.25,
+        exponent: 1000,
+        negative: -9007199254740993n,
+        safe: 42n,
+        unsafe: 9007199254740993n
+      }]
+    }])
+  })
+
+  it.each([
+    ["invalid JSON", "{not-json", "Failed to parse evaluator output"],
+    ["invalid envelope", "{\"status\":42,\"bestTraces\":[]}", "Invalid evaluator output"],
+    [
+      "invalid trace",
+      "{\"status\":\"ok\",\"bestTraces\":[{\"states\":{\"vars\":\"invalid\",\"states\":[]}}]}",
+      "Invalid evaluator output"
+    ]
+  ])("rejects %s before trace persistence", async (_case, output, message) => {
+    await expect(Effect.runPromise(normalizeEvaluatorOutput(output))).rejects.toThrow(message)
   })
 
   it("generates compiled-input traces and replays them through driver dispatch", async () => {

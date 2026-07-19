@@ -1,88 +1,46 @@
-import { Effect, Option, Predicate, Schema } from "effect"
+import { Effect, Predicate, Schema } from "effect"
 
 import { QuintError } from "./errors.js"
 import type { ItfTraceJson } from "./trace-files.js"
 
-const JSON_BIGINT_SENTINEL = "#quintConnectBigInt"
+interface JsonParseContext {
+  readonly source?: unknown
+}
 
-const EvaluatorTraceStates = Schema.Struct({
+const JSON_INTEGER_LITERAL = /^-?(?:0|[1-9]\d*)$/
+
+const EvaluatorTrace = Schema.Struct({
   "#meta": Schema.optional(Schema.Unknown),
-  vars: Schema.optional(Schema.Unknown),
-  states: Schema.optional(Schema.Unknown)
+  vars: Schema.Array(Schema.String),
+  states: Schema.Array(Schema.Record(Schema.String, Schema.Unknown))
 })
-const EvaluatorBestTrace = Schema.Struct({ states: EvaluatorTraceStates })
+const EvaluatorBestTrace = Schema.Struct({ states: EvaluatorTrace })
+const EvaluatorSuccessOutput = Schema.Struct({
+  status: Schema.Literal("ok"),
+  bestTraces: Schema.Array(EvaluatorBestTrace)
+})
 const EvaluatorOutput = Schema.Record(Schema.String, Schema.Unknown)
-const EvaluatorErrorStatus = Schema.Literal("error")
-const EvaluatorErrors = Schema.Array(Schema.Unknown)
-const EvaluatorBestTraces = Schema.Array(Schema.Unknown)
+const EvaluatorFailureOutput = Schema.Struct({
+  status: Schema.Literal("error"),
+  errors: Schema.Array(Schema.Unknown)
+})
 
 const formatEvaluatorError = (error: unknown): string =>
   Predicate.isObject(error) && typeof error["message"] === "string" ? error["message"] : String(error)
 
-const isJsonDigit = (char: string): boolean => char >= "0" && char <= "9"
-
-const wrapJsonIntegerLiterals = (json: string): string => {
-  let result = ""
-  let index = 0
-  let inString = false
-  let escaped = false
-
-  while (index < json.length) {
-    const char = json[index]
-    if (inString) {
-      result += char
-      if (escaped) {
-        escaped = false
-      } else if (char === "\\") {
-        escaped = true
-      } else if (char === "\"") {
-        inString = false
-      }
-      index += 1
-      continue
+const parseJsonPreservingIntegers = (json: string): unknown =>
+  JSON.parse(json, (_key: string, value: unknown, context?: JsonParseContext): unknown => {
+    if (typeof value !== "number") {
+      return value
     }
-    if (char === "\"") {
-      inString = true
-      result += char
-      index += 1
-      continue
+    if (typeof context?.source !== "string") {
+      throw new Error("Lossless evaluator JSON decoding requires Node.js 22 or newer")
     }
-    if (char === "-" || isJsonDigit(char)) {
-      const start = index
-      let cursor = char === "-" ? index + 1 : index
-      while (cursor < json.length && isJsonDigit(json[cursor])) {
-        cursor += 1
-      }
-      const isInteger = cursor > start && json[cursor] !== "." && json[cursor] !== "e" && json[cursor] !== "E"
-      if (!isInteger) {
-        while (
-          cursor < json.length
-          && ![",", "]", "}", " ", "\n", "\r", "\t"].includes(json[cursor])
-        ) {
-          cursor += 1
-        }
-      }
-      const token = json.slice(start, cursor)
-      result += isInteger ? `{"${JSON_BIGINT_SENTINEL}":"${token}"}` : token
-      index = cursor
-      continue
-    }
-    result += char
-    index += 1
-  }
-  return result
-}
+    return JSON_INTEGER_LITERAL.test(context.source) ? BigInt(context.source) : value
+  })
 
-const unwrapJsonBigIntSentinel = (_key: string, value: unknown): unknown => {
-  if (
-    Predicate.isObject(value)
-    && Object.keys(value).length === 1
-    && typeof value[JSON_BIGINT_SENTINEL] === "string"
-  ) {
-    return BigInt(value[JSON_BIGINT_SENTINEL])
-  }
-  return value
-}
+const invalidEvaluatorOutput = (error: unknown): QuintError =>
+  new QuintError({ message: `Invalid evaluator output: ${error}` })
 
 export const normalizeEvaluatorOutput = (
   stdout: string
@@ -93,31 +51,30 @@ export const normalizeEvaluatorOutput = (
       return yield* new QuintError({ message: "No JSON output from Rust evaluator" })
     }
     const parsedJson: unknown = yield* Effect.try({
-      try: () => JSON.parse(wrapJsonIntegerLiterals(jsonLine), unwrapJsonBigIntSentinel),
-      catch: (e) => new QuintError({ message: `Failed to parse evaluator output: ${e}` })
+      try: () => parseJsonPreservingIntegers(jsonLine),
+      catch: (error) => new QuintError({ message: `Failed to parse evaluator output: ${error}` })
     })
-    const parsed = yield* Schema.decodeUnknownEffect(EvaluatorOutput)(parsedJson).pipe(
-      Effect.orElseSucceed(() => EvaluatorOutput.make({}))
+    const envelope = yield* Schema.decodeUnknownEffect(EvaluatorOutput)(parsedJson).pipe(
+      Effect.mapError(invalidEvaluatorOutput)
     )
-    if (Option.isSome(Schema.decodeUnknownOption(EvaluatorErrorStatus)(parsed["status"]))) {
-      const decodedErrors = Schema.decodeUnknownOption(EvaluatorErrors)(parsed["errors"])
-      const errors = Option.isSome(decodedErrors) ? decodedErrors.value : []
+
+    if (envelope["status"] === "error") {
+      const failure = yield* Schema.decodeUnknownEffect(EvaluatorFailureOutput)(parsedJson).pipe(
+        Effect.mapError(invalidEvaluatorOutput)
+      )
       return yield* new QuintError({
-        message: `Quint simulation error:\n${errors.map(formatEvaluatorError).join("\n")}`
+        message: `Quint simulation error:\n${failure.errors.map(formatEvaluatorError).join("\n")}`
       })
     }
-    const decodedBestTraces = Schema.decodeUnknownOption(EvaluatorBestTraces)(parsed["bestTraces"])
-    const bestTraces = Option.isSome(decodedBestTraces) ? decodedBestTraces.value : []
-    return bestTraces.flatMap((rawTrace): ReadonlyArray<ItfTraceJson> => {
-      const decoded = Schema.decodeUnknownOption(EvaluatorBestTrace)(rawTrace)
-      return Option.isNone(decoded)
-        ? []
-        : [{
-          vars: decoded.value.states.vars,
-          states: decoded.value.states.states,
-          ...(!Object.hasOwn(decoded.value.states, "#meta")
-            ? {}
-            : { "#meta": decoded.value.states["#meta"] })
-        }]
-    })
+
+    const success = yield* Schema.decodeUnknownEffect(EvaluatorSuccessOutput)(parsedJson).pipe(
+      Effect.mapError(invalidEvaluatorOutput)
+    )
+    const traces: ReadonlyArray<ItfTraceJson> = success.bestTraces.map(({ states }) => ({
+      vars: states.vars,
+      states: states.states,
+      ...(!Object.hasOwn(states, "#meta") ? {} : { "#meta": states["#meta"] })
+    }))
+
+    return traces
   })
