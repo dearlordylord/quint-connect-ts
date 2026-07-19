@@ -177,6 +177,33 @@ describe("platform process boundary", () => {
     await expect(windowsCount).resolves.toBe(2)
   })
 
+  it("does not trust a partial count when a Windows tasklist row is malformed", async () => {
+    const windows = makeBoundary("win32")
+    const count = Effect.runPromise(windows.boundary.countEvaluatorProcesses)
+
+    windows.commands[0]?.callback(
+      null,
+      [
+        "\"quint_evaluator.exe\",\"100\",\"Console\",\"1\",\"10,000 K\"",
+        "\"quint_evaluator.exe\",not-a-pid"
+      ].join("\r\n")
+    )
+
+    await expect(count).resolves.toBe(0)
+  })
+
+  it("treats unexpected Windows tasklist output as no trusted matches", async () => {
+    const windows = makeBoundary("win32")
+    const count = Effect.runPromise(windows.boundary.countEvaluatorProcesses)
+
+    windows.commands[0]?.callback(
+      null,
+      "INFO: No tasks are running which match the specified criteria."
+    )
+
+    await expect(count).resolves.toBe(0)
+  })
+
   it("cancels an in-flight zombie check without waiting for the OS command", async () => {
     const { boundary, commands } = makeBoundary("win32")
     const fiber = Effect.runFork(boundary.countEvaluatorProcesses)

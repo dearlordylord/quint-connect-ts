@@ -36,17 +36,23 @@ const defaultDeps: PlatformProcessDeps = {
 }
 
 const ProcessCount = Schema.NumberFromString
+const WindowsTasklistRow = Schema.String.check(Schema.isPattern(
+  /^"quint_evaluator\.exe","[0-9]+","(?:[^"]|"")*","[0-9]+","(?:[^"]|"")*"$/iu
+))
+const WindowsTasklistRows = Schema.Array(WindowsTasklistRow)
 
 const parsePosixProcessCount = (stdout: string): number => {
   const decoded = Schema.decodeUnknownOption(ProcessCount)(stdout.trim())
   return Option.isSome(decoded) ? decoded.value : 0
 }
 
-const parseWindowsProcessCount = (stdout: string): number =>
-  stdout
+const parseWindowsProcessCount = (stdout: string): number => {
+  const rows = stdout
     .split(/\r?\n/u)
-    .filter((line) => line.toLowerCase().includes("quint_evaluator.exe"))
-    .length
+    .filter((line) => line.length > 0)
+  const decoded = Schema.decodeUnknownOption(WindowsTasklistRows)(rows)
+  return Option.isSome(decoded) ? decoded.value.length : 0
+}
 
 // eslint-disable-next-line functional/no-mixed-types -- the boundary exposes platform decisions and operations together.
 export interface PlatformProcessBoundary {
