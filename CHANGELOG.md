@@ -1,5 +1,16 @@
 # @firfi/quint-connect
 
+## 2.0.2-effect4.1
+
+### Patch Changes
+
+- fec9e12: Centralize trace-generation mode policy, fail fast on malformed `QUINT_BACKEND`, and share scoped subprocess lifecycle handling across the Quint CLI and Rust evaluator adapters.
+- 7361c00: Adopt `@firfi/itf-trace-parser` 0.2.0-effect4.1 and its hardened Effect schema typings. Effect action-pick schemas and `ItfOption` now explicitly require service-free codecs, matching the existing runtime contract, while map, tuple, and variant schemas retain precise encoded types. Also add isolated packed-consumer publish checks for Node 22 and Bun 1.3.14.
+- aa9884f: Add injectable Effect trace generation and exact named `quint test` replay mode.
+- a0d05fa: Preserve evaluator integers losslessly on Node.js 22+ and make Quint subprocess lifecycle handling cross-platform.
+- 386e6fc: Allow callers to pin the Quint executable with `quintBin` or `QUINT_BIN`, preserve the extendable `RunOptions` interface, and expose strict generation-mode option unions.
+- 265c794: Unify replay-step decoding and preserve typed state-check errors and Effect service requirements.
+
 ## 2.0.2-effect4.0
 
 ### Patch Changes

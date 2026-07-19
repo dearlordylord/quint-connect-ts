@@ -7,7 +7,13 @@
   "changesets": [
     "brave-jars-guess",
     "bright-drivers-replay",
+    "centralize-generation-process",
     "effect4-migration",
-    "remove-platform-deps"
+    "harden-effect-parser-contract",
+    "inject-trace-generation",
+    "lossless-cross-platform-traces",
+    "pinned-quint-launch",
+    "remove-platform-deps",
+    "tidy-replay-steps"
   ]
 }
