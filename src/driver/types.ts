@@ -10,8 +10,11 @@ export const defaultConfig: Config = {
   nondetPath: []
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SchemaFields = { readonly [key: string]: Schema.Schema<any> }
+// Pick schemas are decoded before action handlers, and the driver API has no
+// layer input for decoder services. Keep this boundary explicitly service-free.
+type SchemaFields = {
+  readonly [key: string]: Schema.Codec<unknown, unknown, never, unknown>
+}
 
 export type ActionPicks<Fields extends SchemaFields> = {
   readonly [K in keyof Fields]: Schema.Schema.Type<Fields[K]>
@@ -30,8 +33,7 @@ export type ActionDef<Fields extends SchemaFields, E = never, R = never> =
   & ActionDefHandler<Fields, E, R>
 
 interface AnyActionDefSchema {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  readonly picks: Schema.Struct<Record<string, Schema.Schema<any>>>
+  readonly picks: Schema.Struct<SchemaFields>
 }
 
 interface AnyActionDefHandler<E, R> {

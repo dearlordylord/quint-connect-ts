@@ -56,8 +56,7 @@ export const stateCheck = <S, E, R>(
   compareState: (spec: S, impl: S) => boolean
 ): StateCheck<S, E, R> => ({ compareState, deserializeState })
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type EffectPicksSchema = Record<string, Schema.Schema<any>>
+type EffectPicksSchema = Record<string, Schema.Codec<unknown, unknown, never, unknown>>
 
 type EffectHandlerPicks<Fields extends EffectPicksSchema> = {
   readonly [K in keyof Fields]: Schema.Schema.Type<Fields[K]>
@@ -90,8 +89,7 @@ type FactoryRequirements<F> = {
 }[keyof F]
 
 export function defineDriver<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  S extends Record<string, Record<string, Schema.Schema<any>>>,
+  S extends Record<string, EffectPicksSchema>,
   Factory extends EffectDriverFactoryResult<S>
 >(
   schema: S,

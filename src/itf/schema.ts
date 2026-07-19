@@ -19,7 +19,7 @@ export type { ITFValueRaw } from "@firfi/itf-trace-parser"
 // Some(x) = { tag: "Some", value: x }
 // None    = { tag: "None", value: { "#tup": [] } }
 
-export const ItfOption = <A>(inner: Schema.Schema<A>) =>
+export const ItfOption = <S extends Schema.Codec<unknown, unknown, never, unknown>>(inner: S) =>
   ITFVariant({ Some: inner, None: Schema.Unknown }).pipe(
     Schema.decodeTo(
       Schema.UndefinedOr(Schema.toType(inner)),

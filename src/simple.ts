@@ -149,7 +149,7 @@ export function defineDriver<
 const wrapAction = (
   actionDef: AnySimpleActionDef
 ): AnyActionDef => {
-  const fields: Record<string, Schema.Schema<unknown>> = {}
+  const fields: Record<string, Schema.Codec<unknown, unknown, never, unknown>> = {}
   for (const key of Object.keys(actionDef.picks)) {
     fields[key] = Schema.Unknown
   }

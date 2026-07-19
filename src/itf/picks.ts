@@ -4,8 +4,7 @@ import { Effect, Option, Predicate, Schema } from "effect"
 
 import { ItfOption } from "./schema.js"
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type EffectPicksFields = Record<string, Schema.Schema<any>>
+type EffectPicksFields = Record<string, Schema.Codec<unknown, unknown, never, unknown>>
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type StandardPicksSchema = Record<string, StandardSchemaV1<any, any>>
