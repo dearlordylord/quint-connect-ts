@@ -28,6 +28,9 @@ interface PlatformProcessDeps {
   readonly killProcess: (pid: number, signal: NodeJS.Signals) => unknown
   readonly addExitListener: (listener: () => void) => void
   readonly removeExitListener: (listener: () => void) => void
+  readonly addSignalListener: (signal: NodeJS.Signals, listener: () => void) => void
+  readonly removeSignalListener: (signal: NodeJS.Signals, listener: () => void) => void
+  readonly signalSelf: (signal: NodeJS.Signals) => void
 }
 
 const defaultRunCommand: RunCommand = (command, args, callback) =>
@@ -38,13 +41,27 @@ const defaultRunCommandSync: RunCommandSync = (command, args) => {
   return result.error === undefined && result.status === 0
 }
 
+const interruptExitCode = 130
+const terminationExitCode = 143
+
+const signalSelf = (signal: NodeJS.Signals): void => {
+  try {
+    process.kill(process.pid, signal)
+  } catch {
+    process.exit(signal === "SIGINT" ? interruptExitCode : terminationExitCode)
+  }
+}
+
 const defaultDeps: PlatformProcessDeps = {
   platform: process.platform,
   runCommand: defaultRunCommand,
   runCommandSync: defaultRunCommandSync,
   killProcess: (pid, signal) => process.kill(pid, signal),
   addExitListener: (listener) => process.on("exit", listener),
-  removeExitListener: (listener) => process.removeListener("exit", listener)
+  removeExitListener: (listener) => process.removeListener("exit", listener),
+  addSignalListener: (signal, listener) => process.once(signal, listener),
+  removeSignalListener: (signal, listener) => process.removeListener(signal, listener),
+  signalSelf
 }
 
 const ProcessCount = Schema.NumberFromString
@@ -141,13 +158,24 @@ export const makePlatformProcessBoundary = (
       terminateImmediately(activeProcess)
     }
     let completed = false
+    const propagateSignal = (signal: NodeJS.Signals) => {
+      complete()
+      terminateOnExit()
+      deps.signalSelf(signal)
+    }
+    const onSigint = () => propagateSignal("SIGINT")
+    const onSigterm = () => propagateSignal("SIGTERM")
     const complete = () => {
       if (!completed) {
         completed = true
         deps.removeExitListener(terminateOnExit)
+        deps.removeSignalListener("SIGINT", onSigint)
+        deps.removeSignalListener("SIGTERM", onSigterm)
       }
     }
     deps.addExitListener(terminateOnExit)
+    deps.addSignalListener("SIGINT", onSigint)
+    deps.addSignalListener("SIGTERM", onSigterm)
 
     return {
       complete,

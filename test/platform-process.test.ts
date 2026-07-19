@@ -19,12 +19,18 @@ const makeBoundary = (platform: NodeJS.Platform) => {
   const killProcess = vi.fn()
   const runCommandSync = vi.fn(() => true)
   const exitListeners: Array<() => void> = []
+  const signalListeners = new Map<NodeJS.Signals, Array<() => void>>()
   const removeExitListener = vi.fn((listener: () => void) => {
     const index = exitListeners.indexOf(listener)
     if (index >= 0) {
       exitListeners.splice(index, 1)
     }
   })
+  const removeSignalListener = vi.fn((signal: NodeJS.Signals, listener: () => void) => {
+    const listeners = signalListeners.get(signal) ?? []
+    signalListeners.set(signal, listeners.filter((registered) => registered !== listener))
+  })
+  const signalSelf = vi.fn()
   const boundary = makePlatformProcessBoundary({
     platform,
     runCommand: (command, args, callback) => {
@@ -35,7 +41,13 @@ const makeBoundary = (platform: NodeJS.Platform) => {
     runCommandSync,
     killProcess,
     addExitListener: (listener) => exitListeners.push(listener),
-    removeExitListener
+    removeExitListener,
+    addSignalListener: (signal, listener) => {
+      const listeners = signalListeners.get(signal) ?? []
+      signalListeners.set(signal, [...listeners, listener])
+    },
+    removeSignalListener,
+    signalSelf
   })
   return {
     boundary,
@@ -43,7 +55,10 @@ const makeBoundary = (platform: NodeJS.Platform) => {
     exitListeners,
     killProcess,
     removeExitListener,
-    runCommandSync
+    removeSignalListener,
+    runCommandSync,
+    signalListeners,
+    signalSelf
   }
 }
 
@@ -143,6 +158,8 @@ describe("platform process boundary", () => {
 
     await expect(result).resolves.toEqual({ exitCode: 0, stderr: "" })
     expect(platform.exitListeners).toEqual([])
+    expect(platform.signalListeners.get("SIGINT")).toEqual([])
+    expect(platform.signalListeners.get("SIGTERM")).toEqual([])
     expect(platform.removeExitListener).toHaveBeenCalledOnce()
   })
 
@@ -156,17 +173,22 @@ describe("platform process boundary", () => {
 
     await expect(result).rejects.toMatchObject({ _tag: "QuintNotFoundError" })
     expect(platform.exitListeners).toEqual([])
+    expect(platform.signalListeners.get("SIGINT")).toEqual([])
+    expect(platform.signalListeners.get("SIGTERM")).toEqual([])
     expect(platform.removeExitListener).toHaveBeenCalledOnce()
   })
 
   it("terminates a POSIX process group when interrupted", async () => {
-    const { boundary, killProcess, removeExitListener } = makeBoundary("linux")
+    const platform = makeBoundary("linux")
+    const { boundary, killProcess, removeExitListener } = platform
     const lifecycle = boundary.makeLifecycle(() => ({ pid: 42 }))
 
     await Effect.runPromise(lifecycle.interrupt)
 
     expect(killProcess).toHaveBeenCalledWith(-42, "SIGKILL")
     expect(removeExitListener).toHaveBeenCalledOnce()
+    expect(platform.signalListeners.get("SIGINT")).toEqual([])
+    expect(platform.signalListeners.get("SIGTERM")).toEqual([])
   })
 
   it("terminates a Windows process tree with taskkill when interrupted", async () => {
@@ -252,6 +274,42 @@ describe("platform process boundary", () => {
     windows.exitListeners[0]?.()
 
     expect(windows.killProcess).toHaveBeenCalledWith(48, "SIGKILL")
+  })
+
+  it("cleans a POSIX process group on SIGINT before restoring signal termination", () => {
+    const posix = makeBoundary("linux")
+    posix.boundary.makeLifecycle(() => ({ pid: 51 }))
+    posix.signalSelf.mockImplementation(() => {
+      expect(posix.exitListeners).toEqual([])
+      expect(posix.signalListeners.get("SIGINT")).toEqual([])
+      expect(posix.signalListeners.get("SIGTERM")).toEqual([])
+    })
+
+    posix.signalListeners.get("SIGINT")?.[0]?.()
+
+    expect(posix.killProcess).toHaveBeenCalledWith(-51, "SIGKILL")
+    expect(posix.signalSelf).toHaveBeenCalledOnce()
+    expect(posix.signalSelf).toHaveBeenCalledWith("SIGINT")
+  })
+
+  it("cleans a Windows process tree on SIGTERM before restoring signal termination", () => {
+    const windows = makeBoundary("win32")
+    windows.boundary.makeLifecycle(() => ({ pid: 52 }))
+    windows.signalSelf.mockImplementation(() => {
+      expect(windows.exitListeners).toEqual([])
+      expect(windows.signalListeners.get("SIGINT")).toEqual([])
+      expect(windows.signalListeners.get("SIGTERM")).toEqual([])
+    })
+
+    windows.signalListeners.get("SIGTERM")?.[0]?.()
+
+    expect(windows.runCommandSync).toHaveBeenCalledWith(
+      "taskkill",
+      ["/PID", "52", "/T", "/F"]
+    )
+    expect(windows.signalSelf).toHaveBeenCalledOnce()
+    expect(windows.signalSelf).toHaveBeenCalledWith("SIGTERM")
+    expect(windows.killProcess).not.toHaveBeenCalled()
   })
 
   it("tolerates a direct process that has already exited", async () => {
