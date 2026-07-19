@@ -94,6 +94,7 @@
   "dependencies": {
     "@firfi/itf-trace-parser": "0.2.0-effect4.0",
     "@standard-schema/spec": "^1.1.0",
+    "cross-spawn": "^7.0.6",
     "effect": "4.0.0-beta.99"
   },
   "lint-staged": {
@@ -112,6 +113,7 @@
     "@effect/vitest": "4.0.0-beta.99",
     "@eslint/compat": "^2.0.2",
     "@tanstack/intent": "^0.0.14",
+    "@types/cross-spawn": "^6.0.6",
     "@types/node": "^25.1.0",
     "@typescript-eslint/parser": "^8.54.0",
     "eslint": "^9.39.2",
