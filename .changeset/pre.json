@@ -2,11 +2,11 @@
   "mode": "pre",
   "tag": "effect4",
   "initialVersions": {
-    "@firfi/quint-connect": "0.4.2"
+    "@firfi/quint-connect": "2.0.1"
   },
   "changesets": [
     "brave-jars-guess",
-    "calm-rocks-listen",
+    "bright-drivers-replay",
     "effect4-migration",
     "remove-platform-deps"
   ]

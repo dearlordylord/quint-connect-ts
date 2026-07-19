@@ -1,5 +1,11 @@
 # @firfi/quint-connect
 
+## 2.0.2-effect4.0
+
+### Patch Changes
+
+- Restore feature and package parity with the Effect 3 release line while upgrading the Effect 4 prerelease to `4.0.0-beta.99`.
+
 ## 2.0.1
 
 ### Patch Changes
