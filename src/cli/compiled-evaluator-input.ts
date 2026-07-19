@@ -1,7 +1,7 @@
 import { Effect, Schema, SchemaGetter } from "effect"
 
 import { QuintError } from "./errors.js"
-import type { RunOptions } from "./run-options.js"
+import type { RunGenerationOptions } from "./run-options.js"
 import { DEFAULT_MAX_SAMPLES, DEFAULT_MAX_STEPS, DEFAULT_N_TRACES } from "./run-options.js"
 
 const RANDOM_SEED_HEX_LENGTH = 16
@@ -67,7 +67,7 @@ export const makeRandomSeedHex = (): string =>
 
 export const patchCompiledEvaluatorInput = (
   compiledInput: CompiledEvaluatorInput,
-  opts: RunOptions,
+  opts: RunGenerationOptions,
   cpuCount: number,
   randomSeedHex: string
 ): PatchedCompiledInput => {

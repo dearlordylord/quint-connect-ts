@@ -120,7 +120,7 @@ describe("Integration: counter spec", () => {
       const result = yield* quintRun({
         spec: path.join(specDir, "counter.qnt"),
         generation: { mode: "test", test: "incrementOnce" },
-        nTraces: 1,
+        maxSamples: 1,
         seed: "1",
         driverFactory: defineDriver(
           { init: { amount: ITFBigInt }, Increment: { amount: ITFBigInt } },

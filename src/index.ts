@@ -15,9 +15,11 @@ export type {
   Config,
   QuintRunGeneration,
   QuintTestGeneration,
+  RunGenerationOptions,
   RunOptions,
   SimpleActionMap,
   SimpleDriver,
   SimpleRunOptions,
+  TestGenerationOptions,
   TraceGenerationMode
 } from "./simple.js"

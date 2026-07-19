@@ -4,8 +4,13 @@ import { Effect, Predicate } from "effect"
 import { QuintError, QuintNotFoundError } from "./errors.js"
 import { platformProcess } from "./platform-process.js"
 import type { PlatformProcessBoundary } from "./platform-process.js"
-import type { RunOptions } from "./run-options.js"
-import { DEFAULT_MAX_SAMPLES, DEFAULT_N_TRACES, isQuintTestGeneration } from "./run-options.js"
+import type { RunGenerationOptions, RunOptions, TestGenerationOptions } from "./run-options.js"
+import {
+  DEFAULT_MAX_SAMPLES,
+  DEFAULT_N_TRACES,
+  DEFAULT_TEST_MAX_SAMPLES,
+  isQuintTestGeneration
+} from "./run-options.js"
 import type { TraceGenerationAdapter } from "./trace-adapter.js"
 import { readTraceFiles } from "./trace-files.js"
 
@@ -48,7 +53,7 @@ const resolveBackend = (opts: RunOptions): "typescript" | "rust" => {
 }
 
 export const buildRunArgs = (
-  opts: RunOptions,
+  opts: RunGenerationOptions,
   outDir: string
 ): ReadonlyArray<string> => {
   const nTraces = opts.nTraces ?? DEFAULT_N_TRACES
@@ -94,17 +99,17 @@ export const buildRunArgs = (
 const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 export const buildTestArgs = (
-  opts: RunOptions & { readonly generation: { readonly mode: "test"; readonly test: string } },
+  opts: TestGenerationOptions,
   outDir: string
 ): ReadonlyArray<string> => {
-  const nTraces = opts.nTraces ?? DEFAULT_N_TRACES
+  const maxSamples = opts.maxSamples ?? DEFAULT_TEST_MAX_SAMPLES
   const args: Array<string> = [
     "test",
     opts.spec,
     "--match",
     `^${escapeRegex(opts.generation.test)}$`,
     "--max-samples",
-    String(nTraces),
+    String(maxSamples),
     "--out-itf",
     `${outDir}/trace_{seq}.itf.json`,
     "--verbosity",

@@ -14,7 +14,14 @@ export type {
 } from "./driver/types.js"
 export { defaultConfig } from "./driver/types.js"
 
-export type { QuintRunGeneration, QuintTestGeneration, RunOptions, TraceGenerationMode } from "./cli/quint.js"
+export type {
+  QuintRunGeneration,
+  QuintTestGeneration,
+  RunGenerationOptions,
+  RunOptions,
+  TestGenerationOptions,
+  TraceGenerationMode
+} from "./cli/quint.js"
 export { generateTraces, QuintError, QuintNotFoundError } from "./cli/quint.js"
 export type { TraceGenerationService } from "./cli/trace-generation.js"
 export { TraceGeneration, traceGenerationLayer } from "./cli/trace-generation.js"

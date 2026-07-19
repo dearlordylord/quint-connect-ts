@@ -18,6 +18,7 @@ import {
   makeQuintCliTraceAdapter,
   makeRunQuintProcess
 } from "../src/cli/quint-cli-adapter.js"
+import type { RunOptions, TestGenerationOptions } from "../src/cli/run-options.js"
 import { readTraceFiles, writeTraceFiles } from "../src/cli/trace-files.js"
 import { defaultConfig } from "../src/driver/types.js"
 import { defineDriver } from "../src/effect.js"
@@ -112,7 +113,7 @@ describe("Quint CLI trace adapter", () => {
     const args = buildTestArgs({
       spec: "scenarios.qnt",
       seed: "0x2a",
-      nTraces: 4,
+      maxSamples: 4,
       main: "scenarios",
       backend: "rust",
       generation: { mode: "test", test: "commit.test+1" }
@@ -136,6 +137,24 @@ describe("Quint CLI trace adapter", () => {
       "--main",
       "scenarios"
     ])
+  })
+
+  it("exposes mode-specific options and rejects run-only fields in test mode", () => {
+    const acceptsRunOptions = (_opts: RunOptions): boolean => true
+
+    expect(acceptsRunOptions({
+      spec: "scenarios.qnt",
+      generation: { mode: "test", test: "scenario" },
+      maxSamples: 4
+    })).toBe(true)
+
+    const invalidTestOptions: TestGenerationOptions = {
+      spec: "scenarios.qnt",
+      generation: { mode: "test", test: "scenario" },
+      // @ts-expect-error nTraces is a quint run option; quint test uses maxSamples.
+      nTraces: 4
+    }
+    expect(invalidTestOptions.nTraces).toBe(4)
   })
 
   it("reads generated trace files without invoking a real Quint binary", async () => {
@@ -198,6 +217,20 @@ describe("Quint CLI trace adapter", () => {
 })
 
 describe("compiled evaluator trace adapter", () => {
+  it("never selects compiled-input evaluation for named-test mode", () => {
+    const testOptions: TestGenerationOptions = {
+      spec: "scenarios.qnt",
+      generation: { mode: "test", test: "scenario" }
+    }
+    const structurallyWidenedTestOptions = {
+      ...testOptions,
+      compiledInput: "compiled.json"
+    }
+
+    // @ts-expect-error compiledInput is excluded from named-test mode, but guard widened JavaScript callers too.
+    expect(makeCompiledEvaluatorTraceAdapter().canGenerate(structurallyWidenedTestOptions)).toBe(false)
+  })
+
   it("kills the evaluator process group when the Effect is interrupted", async () => {
     const proc = new FakeEvaluatorProcess(4242)
     const spawnProcess = vi.fn(() => proc)
