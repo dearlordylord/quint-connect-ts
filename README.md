@@ -153,10 +153,6 @@ No `Effect.scoped` or `Effect.provide` needed — resource management and Node.j
 
 Quint CLI and compiled-evaluator subprocesses share the same scoped lifecycle. Normal completion removes exit and signal hooks; interruption, `SIGINT`, `SIGTERM`, or parent exit terminates the spawned process group on POSIX and the process tree with `taskkill` on Windows before propagating the signal. This prevents evaluator processes from being left behind after cancelled tests.
 
-#### Windows validation coverage
-
-A pinned `windows-2022` CI job (`pnpm test:windows`, `test/windows-lifecycle.test.ts`) validates real win32 behavior against the locally pinned `@informalsystems/quint` dependency, with no network/npx fallback: `quint.cmd` resolution through `PATH` and through an explicit `quintBin`, trace generation with spaces in spec and trace-directory paths, `taskkill /T /F` termination of a controlled child process tree, and lifecycle-listener cleanup after completion. The npx-fallback path is exercised for command selection only (`npx.cmd`), never a real spawn, to avoid registry installs. Signal-propagation ordering, `tasklist` zombie-count parsing, and the direct-kill fallback when `taskkill` is unavailable remain unit-tested through the injected process boundary in `test/platform-process.test.ts`, since they require simulated OS command failures and self-signal delivery that a live runner cannot reproduce deterministically.
-
 See [examples/counter/counter-effect.test.ts](examples/counter/counter-effect.test.ts) for a complete runnable vitest example.
 
 ### Vitest Helpers
