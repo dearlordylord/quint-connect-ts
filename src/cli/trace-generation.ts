@@ -15,13 +15,12 @@ export class TraceGeneration extends Context.Service<TraceGeneration, TraceGener
   "@firfi/quint-connect/TraceGeneration"
 ) {}
 
-export const traceGenerationLayer = Layer.effect(
+export const traceGenerationLayer = Layer.sync(
   TraceGeneration,
-  Effect.sync(() =>
+  () =>
     TraceGeneration.of({
       generate: Effect.fn("TraceGeneration.generate")(function*(opts: RunOptions) {
         return yield* generateTraces(opts)
       })
     })
-  )
 )

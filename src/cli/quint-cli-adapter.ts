@@ -42,6 +42,11 @@ type SpawnQuintProcess = (
   options: { readonly env: NodeJS.ProcessEnv; readonly detached: boolean }
 ) => QuintProcess
 
+const resolveBackend = (opts: RunOptions): "typescript" | "rust" => {
+  const envBackend = process.env["QUINT_BACKEND"]
+  return opts.backend ?? (envBackend === "typescript" || envBackend === "rust" ? envBackend : "typescript")
+}
+
 export const buildRunArgs = (
   opts: RunOptions,
   outDir: string
@@ -56,9 +61,7 @@ export const buildRunArgs = (
     "--out-itf",
     `${outDir}/trace_{seq}.itf.json`
   ]
-  const envBackend = process.env["QUINT_BACKEND"]
-  const backend = opts.backend ?? (envBackend === "typescript" || envBackend === "rust" ? envBackend : "typescript")
-  args.push("--backend", backend)
+  args.push("--backend", resolveBackend(opts))
   if (opts.seed !== undefined) {
     args.push("--seed", opts.seed)
   }
@@ -107,9 +110,7 @@ export const buildTestArgs = (
     "--verbosity",
     "0"
   ]
-  const envBackend = process.env["QUINT_BACKEND"]
-  const backend = opts.backend ?? (envBackend === "typescript" || envBackend === "rust" ? envBackend : "typescript")
-  args.push("--backend", backend)
+  args.push("--backend", resolveBackend(opts))
   if (opts.seed !== undefined) {
     args.push("--seed", opts.seed)
   }
