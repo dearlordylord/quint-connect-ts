@@ -28,6 +28,27 @@ jobs:
         env:
           QUINT_BACKEND: typescript
 
+  # Real-Windows validation of Quint command-shim resolution and subprocess
+  # process-tree cleanup (issue #16). The bash-based `pnpm run ci` script is not
+  # Windows-portable, so this job runs the dedicated win32-guarded suite directly.
+  # @informalsystems/quint is a pinned devDependency, so `quint.cmd` is installed
+  # locally and no npx/registry network fallback is exercised.
+  windows-lifecycle:
+    needs: mbt
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:windows
+        env:
+          QUINT_BACKEND: typescript
+
   packed-consumer-node:
     needs: mbt
     runs-on: ubuntu-latest
