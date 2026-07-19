@@ -47,6 +47,7 @@ const installConsumer = async (consumerRoot, dependencies) => {
     "install",
     "--prefer-offline",
     "--ignore-scripts",
+    "--no-frozen-lockfile",
     "--config.auto-install-peers=false"
   ], { cwd: consumerRoot })
 }
