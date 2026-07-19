@@ -55,7 +55,7 @@ const extractFromNondetPath = (
   return Effect.succeed({ action, nondetPicks: normalizeNondetPathPicks(value) })
 }
 
-export const extractReplayAction = (
+const decodeReplayAction = (
   state: TraceStateRecord,
   nondetPath: ReadonlyArray<string>,
   context: ReplayStepContext
@@ -88,6 +88,9 @@ const projectSpecState = (
     : Effect.succeed(projected)
 }
 
+/** Decode action and picks without projecting unused specification state. */
+export const extractReplayAction = decodeReplayAction
+
 /** Decode all data needed to dispatch and check one trace state. */
 export const decodeReplayStep = (
   state: TraceStateRecord,
@@ -95,7 +98,7 @@ export const decodeReplayStep = (
   context: ReplayStepContext
 ): Effect.Effect<ReplayStep, TraceReplayError> =>
   Effect.gen(function*() {
-    const replayAction = yield* extractReplayAction(state, config.nondetPath ?? [], context)
+    const replayAction = yield* decodeReplayAction(state, config.nondetPath ?? [], context)
     const specState = replayAction.action !== ""
       ? yield* projectSpecState(state, config.statePath ?? [], replayAction.action, context)
       : undefined
