@@ -17,6 +17,7 @@ interface PendingCommand {
 const makeBoundary = (platform: NodeJS.Platform) => {
   const commands: Array<PendingCommand> = []
   const killProcess = vi.fn()
+  const runCommandSync = vi.fn(() => true)
   const exitListeners: Array<() => void> = []
   const removeExitListener = vi.fn((listener: () => void) => {
     const index = exitListeners.indexOf(listener)
@@ -31,11 +32,19 @@ const makeBoundary = (platform: NodeJS.Platform) => {
       commands.push(pending)
       return pending
     },
+    runCommandSync,
     killProcess,
     addExitListener: (listener) => exitListeners.push(listener),
     removeExitListener
   })
-  return { boundary, commands, exitListeners, killProcess, removeExitListener }
+  return {
+    boundary,
+    commands,
+    exitListeners,
+    killProcess,
+    removeExitListener,
+    runCommandSync
+  }
 }
 
 class FakeProcess extends EventEmitter {
@@ -80,13 +89,18 @@ describe("platform process boundary", () => {
 
   it("falls back from quint.cmd to npx.cmd on Windows", async () => {
     const { boundary } = makeBoundary("win32")
-    const spawned: Array<{ readonly command: string; readonly process: FakeProcess }> = []
-    const run = makeRunQuintProcess((command) => {
+    const spawned: Array<{
+      readonly args: ReadonlyArray<string>
+      readonly command: string
+      readonly process: FakeProcess
+    }> = []
+    const run = makeRunQuintProcess((command, args) => {
       const child = new FakeProcess(100 + spawned.length)
-      spawned.push({ command, process: child })
+      spawned.push({ args, command, process: child })
       return child
     }, boundary)
-    const result = Effect.runPromise(run(["run", "counter.qnt"], false))
+    const quintArgs = ["run", "counter & model.qnt", "--seed", "0x2a"]
+    const result = Effect.runPromise(run(quintArgs, false))
 
     spawned[0]?.process.emit("error", Object.assign(new Error("missing"), { code: "ENOENT" }))
     spawned[0]?.process.emit("close", 1)
@@ -94,6 +108,55 @@ describe("platform process boundary", () => {
 
     await expect(result).resolves.toEqual({ exitCode: 0, stderr: "" })
     expect(spawned.map(({ command }) => command)).toEqual(["quint.cmd", "npx.cmd"])
+    expect(spawned[0]?.args).toEqual(quintArgs)
+    expect(spawned[1]?.args).toEqual(["@informalsystems/quint", ...quintArgs])
+  })
+
+  it("targets the replacement npx process when fallback execution is interrupted", async () => {
+    const platform = makeBoundary("win32")
+    const spawned: Array<FakeProcess> = []
+    const run = makeRunQuintProcess(() => {
+      const child = new FakeProcess(200 + spawned.length)
+      spawned.push(child)
+      return child
+    }, platform.boundary)
+    const fiber = Effect.runFork(run(["run", "counter.qnt"], false))
+
+    spawned[0]?.emit("error", Object.assign(new Error("missing"), { code: "ENOENT" }))
+    const interrupted = Effect.runPromise(Fiber.interrupt(fiber))
+
+    expect(platform.commands[0]).toMatchObject({
+      command: "taskkill",
+      args: ["/PID", "201", "/T", "/F"]
+    })
+    platform.commands[0]?.callback(null, "")
+    await interrupted
+  })
+
+  it("removes its exit listener after normal completion", async () => {
+    const platform = makeBoundary("linux")
+    const child = new FakeProcess(300)
+    const run = makeRunQuintProcess(() => child, platform.boundary)
+    const result = Effect.runPromise(run(["run", "counter.qnt"], false))
+
+    child.emit("close", 0)
+
+    await expect(result).resolves.toEqual({ exitCode: 0, stderr: "" })
+    expect(platform.exitListeners).toEqual([])
+    expect(platform.removeExitListener).toHaveBeenCalledOnce()
+  })
+
+  it("removes its exit listener after a handled startup failure", async () => {
+    const platform = makeBoundary("linux")
+    const child = new FakeProcess(301)
+    const run = makeRunQuintProcess(() => child, platform.boundary)
+    const result = Effect.runPromise(run(["run", "counter.qnt"], false))
+
+    child.emit("error", new Error("permission denied"))
+
+    await expect(result).rejects.toMatchObject({ _tag: "QuintNotFoundError" })
+    expect(platform.exitListeners).toEqual([])
+    expect(platform.removeExitListener).toHaveBeenCalledOnce()
   })
 
   it("terminates a POSIX process group when interrupted", async () => {
@@ -121,6 +184,17 @@ describe("platform process boundary", () => {
     expect(removeExitListener).toHaveBeenCalledOnce()
   })
 
+  it("falls back to the direct Windows process when taskkill fails", async () => {
+    const { boundary, commands, killProcess } = makeBoundary("win32")
+    const lifecycle = boundary.makeLifecycle(() => ({ pid: 47 }))
+    const interrupted = Effect.runPromise(lifecycle.interrupt)
+
+    commands[0]?.callback(new Error("taskkill unavailable"), "")
+    await interrupted
+
+    expect(killProcess).toHaveBeenCalledWith(47, "SIGKILL")
+  })
+
   it("runs the compiled evaluator with portable Windows lifecycle settings", async () => {
     const { boundary, commands } = makeBoundary("win32")
     const process = new FakeEvaluatorProcess(46)
@@ -140,6 +214,19 @@ describe("platform process boundary", () => {
     await interrupted
   })
 
+  it("removes the compiled evaluator exit listener after a handled startup failure", async () => {
+    const platform = makeBoundary("linux")
+    const process = new FakeEvaluatorProcess(49)
+    const run = makeRunEvaluatorProcess(() => process, platform.boundary)
+    const result = Effect.runPromise(run("/quint_evaluator", "{}"))
+
+    process.emit("error", new Error("not executable"))
+
+    await expect(result).rejects.toMatchObject({ _tag: "QuintNotFoundError" })
+    expect(platform.exitListeners).toEqual([])
+    expect(platform.removeExitListener).toHaveBeenCalledOnce()
+  })
+
   it("uses synchronous best-effort cleanup when the host exits", () => {
     const posix = makeBoundary("linux")
     const windows = makeBoundary("win32")
@@ -150,7 +237,31 @@ describe("platform process boundary", () => {
     windows.exitListeners[0]?.()
 
     expect(posix.killProcess).toHaveBeenCalledWith(-44, "SIGKILL")
-    expect(windows.killProcess).toHaveBeenCalledWith(45, "SIGKILL")
+    expect(windows.runCommandSync).toHaveBeenCalledWith(
+      "taskkill",
+      ["/PID", "45", "/T", "/F"]
+    )
+    expect(windows.killProcess).not.toHaveBeenCalled()
+  })
+
+  it("falls back to direct Windows cleanup when shutdown taskkill fails", () => {
+    const windows = makeBoundary("win32")
+    windows.runCommandSync.mockReturnValue(false)
+    windows.boundary.makeLifecycle(() => ({ pid: 48 }))
+
+    windows.exitListeners[0]?.()
+
+    expect(windows.killProcess).toHaveBeenCalledWith(48, "SIGKILL")
+  })
+
+  it("tolerates a direct process that has already exited", async () => {
+    const posix = makeBoundary("linux")
+    posix.killProcess.mockImplementation(() => {
+      throw new Error("ESRCH")
+    })
+    const lifecycle = posix.boundary.makeLifecycle(() => ({ pid: 50 }))
+
+    await expect(Effect.runPromise(lifecycle.interrupt)).resolves.toBeUndefined()
   })
 
   it("counts evaluator processes asynchronously on POSIX and Windows", async () => {

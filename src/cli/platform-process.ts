@@ -1,5 +1,5 @@
 import { Effect, Option, Schema } from "effect"
-import { execFile } from "node:child_process"
+import { execFile, spawnSync } from "node:child_process"
 
 interface ProcessHandle {
   readonly pid?: number | undefined
@@ -15,10 +15,16 @@ type RunCommand = (
   callback: (error: Error | null, stdout: string) => void
 ) => CommandHandle
 
+type RunCommandSync = (
+  command: string,
+  args: ReadonlyArray<string>
+) => boolean
+
 // eslint-disable-next-line functional/no-mixed-types -- injected process operations include platform data.
 interface PlatformProcessDeps {
   readonly platform: NodeJS.Platform
   readonly runCommand: RunCommand
+  readonly runCommandSync: RunCommandSync
   readonly killProcess: (pid: number, signal: NodeJS.Signals) => unknown
   readonly addExitListener: (listener: () => void) => void
   readonly removeExitListener: (listener: () => void) => void
@@ -27,9 +33,15 @@ interface PlatformProcessDeps {
 const defaultRunCommand: RunCommand = (command, args, callback) =>
   execFile(command, [...args], { encoding: "utf8", windowsHide: true }, callback)
 
+const defaultRunCommandSync: RunCommandSync = (command, args) => {
+  const result = spawnSync(command, [...args], { stdio: "ignore", windowsHide: true })
+  return result.error === undefined && result.status === 0
+}
+
 const defaultDeps: PlatformProcessDeps = {
   platform: process.platform,
   runCommand: defaultRunCommand,
+  runCommandSync: defaultRunCommandSync,
   killProcess: (pid, signal) => process.kill(pid, signal),
   addExitListener: (listener) => process.on("exit", listener),
   removeExitListener: (listener) => process.removeListener("exit", listener)
@@ -93,7 +105,12 @@ export const makePlatformProcessBoundary = (
       const command = deps.runCommand(
         "taskkill",
         ["/PID", String(processHandle.pid), "/T", "/F"],
-        () => resume(Effect.void)
+        (error) => {
+          if (error !== null) {
+            terminateImmediately(processHandle)
+          }
+          resume(Effect.void)
+        }
       )
       return Effect.sync(() => {
         command.kill()
@@ -103,7 +120,26 @@ export const makePlatformProcessBoundary = (
   }
 
   const makeLifecycle = (getActiveProcess: () => ProcessHandle) => {
-    const terminateOnExit = () => terminateImmediately(getActiveProcess())
+    const terminateOnExit = () => {
+      const activeProcess = getActiveProcess()
+      if (!isWindows || activeProcess.pid === undefined) {
+        terminateImmediately(activeProcess)
+        return
+      }
+      try {
+        if (
+          deps.runCommandSync(
+            "taskkill",
+            ["/PID", String(activeProcess.pid), "/T", "/F"]
+          )
+        ) {
+          return
+        }
+      } catch {
+        // Fall through to direct-process cleanup when taskkill cannot start.
+      }
+      terminateImmediately(activeProcess)
+    }
     let completed = false
     const complete = () => {
       if (!completed) {
