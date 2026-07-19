@@ -8,46 +8,15 @@ import { defaultConfig } from "../src/driver/types.js"
 import type { ActionMap, Driver } from "../src/driver/types.js"
 import { defineDriver, stateCheck } from "../src/effect.js"
 import type { ItfTrace } from "../src/itf/schema.js"
-import { extractReplayAction } from "../src/runner/replay-actions.js"
+import { decodeReplayStep } from "../src/runner/replay-actions.js"
 import { dispatchReplayAction } from "../src/runner/replay-dispatch.js"
 import { actionContext, stateMismatchError } from "../src/runner/replay-errors.js"
 import { jsonReplacer, replayTrace, StateMismatchError, stripMetadata, TraceReplayError } from "../src/runner/runner.js"
-import { normalizeTraceState } from "../src/runner/trace-state.js"
-
-describe("trace-state normalization", () => {
-  it("strips metadata when no statePath is configured", () => {
-    const raw = {
-      "#meta": { index: 1 },
-      "mbt::actionTaken": "Increment",
-      "mbt::nondetPicks": {},
-      count: 3
-    }
-
-    expect(normalizeTraceState(raw, [])).toEqual({ count: 3 })
-  })
-
-  it("resolves statePath without stripping nested state", () => {
-    const raw = {
-      "#meta": { index: 1 },
-      "mbt::actionTaken": "Increment",
-      "mbt::nondetPicks": {},
-      "machine::state": {
-        count: 3,
-        "inner::qualified": true
-      }
-    }
-
-    expect(normalizeTraceState(raw, ["machine::state"])).toEqual({
-      count: 3,
-      "inner::qualified": true
-    })
-  })
-})
 
 describe("replay action extraction", () => {
-  it.effect("extracts action and nondet picks from MBT metadata", () =>
+  it.effect("decodes an MBT replay step with stripped projected state", () =>
     Effect.gen(function*() {
-      const action = yield* extractReplayAction(
+      const step = yield* decodeReplayStep(
         {
           "#meta": { index: 1 },
           "mbt::actionTaken": "Increment",
@@ -56,44 +25,74 @@ describe("replay action extraction", () => {
           },
           count: { "#bigint": "7" }
         },
-        [],
+        defaultConfig,
         { traceIndex: 2, stepIndex: 1 }
       )
 
-      expect(action.action).toBe("Increment")
-      expect(action.nondetPicks.get("amount")).toEqual({ tag: "Some", value: { "#bigint": "7" } })
+      expect(step.action).toBe("Increment")
+      expect(step.nondetPicks.get("amount")).toEqual({ tag: "Some", value: { "#bigint": "7" } })
+      expect(step.specState).toEqual({ count: { "#bigint": "7" } })
     }))
 
-  it.effect("extracts action and picks from a configured nondetPath sum type", () =>
+  it.effect("decodes custom action and state paths into one replay step", () =>
     Effect.gen(function*() {
-      const action = yield* extractReplayAction(
+      const step = yield* decodeReplayStep(
         {
           envelope: {
             choice: {
               tag: "Move",
-              value: {
-                from: "a",
-                to: "b"
-              }
-            }
+              value: { from: "a", to: "b" }
+            },
+            state: { position: "b" }
           }
         },
-        ["envelope", "choice"],
-        { traceIndex: 2, stepIndex: 3 }
+        {
+          nondetPath: ["envelope", "choice"],
+          statePath: ["envelope", "state"]
+        },
+        { traceIndex: 3, stepIndex: 4 }
       )
 
-      expect(action.action).toBe("Move")
-      expect(Object.fromEntries(action.nondetPicks)).toEqual({
-        from: { tag: "Some", value: "a" },
-        to: { tag: "Some", value: "b" }
+      expect(step).toEqual({
+        action: "Move",
+        nondetPicks: new Map([
+          ["from", { tag: "Some", value: "a" }],
+          ["to", { tag: "Some", value: "b" }]
+        ]),
+        specState: { position: "b" }
       })
+    }))
+
+  it.effect("reports a missing configured state path with replay context", () =>
+    Effect.gen(function*() {
+      const result = yield* decodeReplayStep(
+        {
+          choice: { tag: "Move", value: {} }
+        },
+        {
+          nondetPath: ["choice"],
+          statePath: ["missing", "state"]
+        },
+        { traceIndex: 5, stepIndex: 6 }
+      ).pipe(
+        Effect.match({
+          onFailure: (error) => error,
+          onSuccess: () => undefined
+        })
+      )
+
+      expect(result).toBeInstanceOf(TraceReplayError)
+      if (result instanceof TraceReplayError) {
+        expect(result).toMatchObject({ traceIndex: 5, stepIndex: 6, action: "Move" })
+        expect(result.message).toContain("Expected state at path missing.state")
+      }
     }))
 
   it.effect("adds replay context when nondetPath is not a sum type", () =>
     Effect.gen(function*() {
-      const result = yield* extractReplayAction(
+      const result = yield* decodeReplayStep(
         { envelope: { choice: { value: {} } } },
-        ["envelope", "choice"],
+        { nondetPath: ["envelope", "choice"] },
         { traceIndex: 4, stepIndex: 5 }
       ).pipe(
         Effect.match({
@@ -152,14 +151,14 @@ describe("replay dispatch helper", () => {
         })
       )
       const driver = yield* factory.create()
-      const replayAction = yield* extractReplayAction(
+      const replayAction = yield* decodeReplayStep(
         {
           choice: {
             tag: "Move",
             value: { from: "a" }
           }
         },
-        ["choice"],
+        { nondetPath: ["choice"] },
         { traceIndex: 0, stepIndex: 1 }
       )
 

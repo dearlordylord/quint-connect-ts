@@ -35,10 +35,10 @@ export {
 } from "./itf/schema.js"
 export type { ITFValueRaw } from "./itf/schema.js"
 
-export const stateCheck = <S>(
-  deserializeState: (raw: unknown) => Effect.Effect<S>,
+export const stateCheck = <S, E, R>(
+  deserializeState: (raw: unknown) => Effect.Effect<S, E, R>,
   compareState: (spec: S, impl: S) => boolean
-): StateCheck<S> => ({ compareState, deserializeState })
+): StateCheck<S, E, R> => ({ compareState, deserializeState })
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type EffectPicksSchema = Record<string, Schema.Schema<any>>

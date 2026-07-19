@@ -19,11 +19,3 @@ export const resolveNestedValue = (
   }
   return current
 }
-
-export const normalizeTraceState = (
-  rawState: TraceStateRecord,
-  statePath: ReadonlyArray<string>
-): unknown =>
-  statePath.length > 0
-    ? resolveNestedValue(rawState, statePath)
-    : stripMetadata(rawState)
