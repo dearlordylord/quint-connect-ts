@@ -1,5 +1,18 @@
+export interface QuintRunGeneration {
+  readonly mode?: "run"
+}
+
+export interface QuintTestGeneration {
+  readonly mode: "test"
+  readonly test: string
+}
+
+export type TraceGenerationMode = QuintRunGeneration | QuintTestGeneration
+
 export interface RunOptions {
   readonly spec: string
+  /** Defaults to `quint run`; use test mode to replay one named Quint test exactly. */
+  readonly generation?: TraceGenerationMode | undefined
   readonly seed?: string | undefined
   readonly nTraces?: number | undefined
   readonly maxSteps?: number | undefined
@@ -23,6 +36,10 @@ export interface RunOptions {
    */
   readonly compiledInput?: string | undefined
 }
+
+export const isQuintTestGeneration = (
+  opts: RunOptions
+): opts is RunOptions & { readonly generation: QuintTestGeneration } => opts.generation?.mode === "test"
 
 export const DEFAULT_N_TRACES = 10
 export const DEFAULT_MAX_SAMPLES = 10000

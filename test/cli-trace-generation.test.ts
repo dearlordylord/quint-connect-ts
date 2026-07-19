@@ -12,7 +12,12 @@ import {
   normalizeEvaluatorOutput,
   patchCompiledEvaluatorInput
 } from "../src/cli/compiled-evaluator-adapter.js"
-import { buildRunArgs, makeQuintCliTraceAdapter, makeRunQuintProcess } from "../src/cli/quint-cli-adapter.js"
+import {
+  buildRunArgs,
+  buildTestArgs,
+  makeQuintCliTraceAdapter,
+  makeRunQuintProcess
+} from "../src/cli/quint-cli-adapter.js"
 import { readTraceFiles, writeTraceFiles } from "../src/cli/trace-files.js"
 import { defaultConfig } from "../src/driver/types.js"
 import { defineDriver } from "../src/effect.js"
@@ -100,6 +105,36 @@ describe("Quint CLI trace adapter", () => {
       "Inv",
       "--witnesses",
       "Witness"
+    ])
+  })
+
+  it("selects one named Quint test exactly", () => {
+    const args = buildTestArgs({
+      spec: "scenarios.qnt",
+      seed: "0x2a",
+      nTraces: 4,
+      main: "scenarios",
+      backend: "rust",
+      generation: { mode: "test", test: "commit.test+1" }
+    }, "/tmp/traces")
+
+    expect(args).toEqual([
+      "test",
+      "scenarios.qnt",
+      "--match",
+      "^commit\\.test\\+1$",
+      "--max-samples",
+      "4",
+      "--out-itf",
+      "/tmp/traces/trace_{seq}.itf.json",
+      "--verbosity",
+      "0",
+      "--backend",
+      "rust",
+      "--seed",
+      "0x2a",
+      "--main",
+      "scenarios"
     ])
   })
 

@@ -13,7 +13,7 @@
 
 Model-based testing framework connecting [Quint](https://github.com/informalsystems/quint) specifications to TypeScript implementations. The TypeScript equivalent of [quint-connect](https://github.com/informalsystems/quint-connect) (Rust).
 
-Spawns `quint run --mbt`, parses ITF traces, replays them through a user-implemented driver, and optionally compares spec state against implementation state after every step.
+Spawns `quint run --mbt` or one exact named `quint test`, parses ITF traces, replays them through a user-implemented driver, and optionally compares spec state against implementation state after every step.
 
 ## Install
 
@@ -196,6 +196,7 @@ The first argument is the test function from your own vitest/`@effect/vitest` in
 - **`defineDriver(schema, factory)`** — define a driver with per-field Effect Schema picks. Same shape as simple API but handlers return `Effect`.
 - **`stateCheck(deserialize, compare)`** — same as simple API but `deserialize` returns `Effect<S>`.
 - **`quintRun(opts)`** — generate traces via `quint run --mbt` and replay them through a driver. Returns `Effect<{ tracesReplayed, seed }>`.
+- **`quintRunWithTraceGeneration(opts)`** — the injectable orchestration variant. It requires the `TraceGeneration` Effect service; provide a fake layer to test generation and replay without subprocesses or files.
 - **`generateTraces(opts)`** — just spawn quint and parse ITF traces without replaying.
 - **`ItfOption(schema)`** — Effect Schema that decodes Quint's Option variant to `A | undefined`.
 - **`ITFBigInt`**, **`ITFSet(item)`**, **`ITFMap(key, value)`** — ITF type schemas.
@@ -207,6 +208,7 @@ Shared by `run`, `quintRun`, and `generateTraces`:
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `spec` | `string` | *required* | Path to the `.qnt` spec file |
+| `generation` | `{ mode: "test", test: string }` | `{ mode: "run" }` | Generate replay traces from exactly one named Quint test instead of `quint run --mbt`. |
 | `seed` | `string` | random | RNG seed for reproducible runs. Must be a big integer: decimal (`"42"`) or hex (`"0x138ff8c9"`). Also reads `QUINT_SEED` env var as fallback. When omitted, a random hex seed is generated and returned in `result.seed` for reproducibility. |
 | `nTraces` | `number` | `10` | Number of traces to generate |
 | `maxSteps` | `number` | quint default | Maximum steps per trace |
@@ -220,6 +222,17 @@ Shared by `run`, `quintRun`, and `generateTraces`:
 | `verbose` | `boolean` | `false` | Sets `QUINT_VERBOSE=true`. Quint logs detailed simulation output to stderr. |
 | `traceDir` | `string` | temp dir | Directory to write ITF trace files. Files are kept after run. Useful for debugging — inspect generated traces when a test fails. |
 | `compiledInput` | `string` | — | Path to Quint's compiled Rust evaluator input. When present and readable, replay uses the compiled evaluator directly. |
+
+Named-test mode uses an escaped, anchored `quint test --match` expression, so only the requested test runs:
+
+```ts
+quintRun({
+  ...options,
+  generation: { mode: "test", test: "commitScenario" },
+})
+```
+
+`quint test` does not provide Quint's `--mbt` instrumentation. The selected Quint run must therefore store its replay action in the state as `{ tag: string, value: record }`; point the driver at that field with `config: () => ({ nondetPath: ["replayAction"] })`. Both generation modes then use the same validated ITF and replay pipeline. `compiledInput` applies only to run mode.
 
 `run` additionally accepts:
 
@@ -264,7 +277,7 @@ With the **TypeScript backend** (default), some traces report an empty `mbt::act
 
 ### Additional Exports
 
-**`@firfi/quint-connect/effect`** also exports: `ITFList`, `ITFTuple`, `ITFVariant`, `ITFUnserializable`, `ItfTrace`, `MbtMeta`, `UntypedTraceSchema`, `generateTraces`, `defaultConfig`.
+**`@firfi/quint-connect/effect`** also exports: `ITFList`, `ITFTuple`, `ITFVariant`, `ITFUnserializable`, `ItfTrace`, `MbtMeta`, `UntypedTraceSchema`, `generateTraces`, `TraceGeneration`, `traceGenerationLayer`, `defaultConfig`.
 
 **`@firfi/quint-connect`** also exports: `transformITFValue`, `defaultConfig`.
 
@@ -278,9 +291,9 @@ The library exports typed error classes for programmatic error handling:
 |---|---|
 | `TraceReplayError` | Unknown action, handler failure, decode failure |
 | `StateMismatchError` | `compareState` returns `false` |
-| `QuintError` | `quint run` exits non-zero (includes stderr output) |
+| `QuintError` | `quint run` or `quint test` exits non-zero (includes stderr output) |
 | `QuintNotFoundError` | `quint` CLI not found |
-| `NoTracesError` | `quint run` produced no traces |
+| `NoTracesError` | trace generation produced no traces |
 
 **Simple API** — use `instanceof`:
 

@@ -5,7 +5,7 @@ import { QuintError, QuintNotFoundError } from "./errors.js"
 import { platformProcess } from "./platform-process.js"
 import type { PlatformProcessBoundary } from "./platform-process.js"
 import type { RunOptions } from "./run-options.js"
-import { DEFAULT_MAX_SAMPLES, DEFAULT_N_TRACES } from "./run-options.js"
+import { DEFAULT_MAX_SAMPLES, DEFAULT_N_TRACES, isQuintTestGeneration } from "./run-options.js"
 import type { TraceGenerationAdapter } from "./trace-adapter.js"
 import { readTraceFiles } from "./trace-files.js"
 
@@ -88,6 +88,42 @@ export const buildRunArgs = (
   return args
 }
 
+const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+export const buildTestArgs = (
+  opts: RunOptions & { readonly generation: { readonly mode: "test"; readonly test: string } },
+  outDir: string
+): ReadonlyArray<string> => {
+  const nTraces = opts.nTraces ?? DEFAULT_N_TRACES
+  const args: Array<string> = [
+    "test",
+    opts.spec,
+    "--match",
+    `^${escapeRegex(opts.generation.test)}$`,
+    "--max-samples",
+    String(nTraces),
+    "--out-itf",
+    `${outDir}/trace_{seq}.itf.json`,
+    "--verbosity",
+    "0"
+  ]
+  const envBackend = process.env["QUINT_BACKEND"]
+  const backend = opts.backend ?? (envBackend === "typescript" || envBackend === "rust" ? envBackend : "typescript")
+  args.push("--backend", backend)
+  if (opts.seed !== undefined) {
+    args.push("--seed", opts.seed)
+  }
+  if (opts.main !== undefined) {
+    args.push("--main", opts.main)
+  }
+  return args
+}
+
+const buildTraceArgs = (
+  opts: RunOptions,
+  outDir: string
+): ReadonlyArray<string> => isQuintTestGeneration(opts) ? buildTestArgs(opts, outDir) : buildRunArgs(opts, outDir)
+
 export const makeRunQuintProcess = (
   spawnProcess: SpawnQuintProcess = (cmd, cmdArgs, options) => {
     const proc = spawn(cmd, [...cmdArgs], options)
@@ -156,13 +192,14 @@ export const makeQuintCliTraceAdapter = (
   canGenerate: () => true,
   generate: (opts, outDir) =>
     Effect.gen(function*() {
-      const args = buildRunArgs(opts, outDir)
+      const args = buildTraceArgs(opts, outDir)
       const { exitCode, stderr } = yield* deps.runQuintProcess(args, opts.verbose === true)
       if (exitCode !== 0) {
+        const command = isQuintTestGeneration(opts) ? "quint test" : "quint run"
         return yield* new QuintError({
           message: stderr
-            ? `quint run failed with exit code ${exitCode}:\n${stderr.trim()}`
-            : `quint run failed with exit code ${exitCode}`,
+            ? `${command} failed with exit code ${exitCode}:\n${stderr.trim()}`
+            : `${command} failed with exit code ${exitCode}`,
           stderr,
           exitCode
         })

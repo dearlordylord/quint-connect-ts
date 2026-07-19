@@ -114,6 +114,28 @@ describe("Integration: counter spec", () => {
       expect(result.seed).toBe("1")
     }), { timeout: 30000 })
 
+  it.effect("generates and replays one exact named Quint test", () =>
+    Effect.gen(function*() {
+      const actions: Array<string> = []
+      const result = yield* quintRun({
+        spec: path.join(specDir, "counter.qnt"),
+        generation: { mode: "test", test: "incrementOnce" },
+        nTraces: 1,
+        seed: "1",
+        driverFactory: defineDriver(
+          { init: { amount: ITFBigInt }, Increment: { amount: ITFBigInt } },
+          () => ({
+            init: () => Effect.sync(() => actions.push("init")),
+            Increment: () => Effect.sync(() => actions.push("Increment")),
+            config: () => ({ nondetPath: ["replayAction"] })
+          })
+        )
+      })
+
+      expect(result).toEqual({ tracesReplayed: 1, seed: "1" })
+      expect(actions).toEqual(["init", "Increment"])
+    }), { timeout: 30000 })
+
   it.effect("fails with TraceReplayError on unknown action", () =>
     Effect.gen(function*() {
       const result = yield* quintRun({

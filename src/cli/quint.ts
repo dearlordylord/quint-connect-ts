@@ -13,7 +13,7 @@ import type { RunOptions } from "./run-options.js"
 import type { TraceGenerationAdapter } from "./trace-adapter.js"
 
 export { QuintError, QuintNotFoundError } from "./errors.js"
-export type { RunOptions } from "./run-options.js"
+export type { QuintRunGeneration, QuintTestGeneration, RunOptions, TraceGenerationMode } from "./run-options.js"
 
 const traceGenerationAdapters: ReadonlyArray<TraceGenerationAdapter> = [
   compiledEvaluatorTraceAdapter,
