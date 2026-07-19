@@ -179,9 +179,12 @@ export const makePlatformProcessBoundary = (
 
     return {
       complete,
-      interrupt: Effect.gen(function*() {
+      interrupt: Effect.suspend(() => {
+        if (completed) {
+          return Effect.void
+        }
         complete()
-        yield* terminateTree(getActiveProcess())
+        return terminateTree(getActiveProcess())
       })
     }
   }

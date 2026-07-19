@@ -6,7 +6,7 @@ import type {
   TestGenerationOptions,
   TraceGenerationOptions
 } from "../cli/quint.js"
-import { isQuintTestGeneration } from "../cli/run-options.js"
+import { resolveTraceGenerationPolicy } from "../cli/trace-generation-policy.js"
 import { TraceGeneration, traceGenerationLayer } from "../cli/trace-generation.js"
 import type { ActionMap, Config, Driver } from "../driver/types.js"
 import { defaultConfig } from "../driver/types.js"
@@ -139,11 +139,12 @@ export const quintRunWithTraceGeneration = <
   Effect.gen(function*() {
     const seed = resolveSeed(opts)
     const traceOpts = { ...opts, seed }
+    const generationPolicy = resolveTraceGenerationPolicy(traceOpts)
     const traceGeneration = yield* TraceGeneration
     const traces = yield* traceGeneration.generate(traceOpts)
     if (traces.length === 0) {
       return yield* new NoTracesError({
-        message: `${isQuintTestGeneration(traceOpts) ? "quint test" : "quint run"} produced no traces`
+        message: `${generationPolicy.command} produced no traces`
       })
     }
 

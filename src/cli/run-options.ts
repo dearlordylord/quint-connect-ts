@@ -60,10 +60,11 @@ export interface TestGenerationOptions extends CommonGenerationOptions {
 /** Mode-safe generation options accepted by public generation and replay entrypoints. */
 export type TraceGenerationOptions = RunOptions | TestGenerationOptions
 
-export const isQuintTestGeneration = (opts: TraceGenerationOptions): opts is TestGenerationOptions =>
-  opts.generation?.mode === "test"
+/** Canonical discriminator used by type guards and trace-generation policy. */
+const resolveTraceGenerationMode = (opts: TraceGenerationOptions): "run" | "test" => opts.generation?.mode ?? "run"
 
-export const isQuintRunGeneration = (opts: TraceGenerationOptions): opts is RunOptions => !isQuintTestGeneration(opts)
+export const isQuintTestGeneration = (opts: TraceGenerationOptions): opts is TestGenerationOptions =>
+  resolveTraceGenerationMode(opts) === "test"
 
 export const DEFAULT_N_TRACES = 10
 export const DEFAULT_TEST_MAX_SAMPLES = 10

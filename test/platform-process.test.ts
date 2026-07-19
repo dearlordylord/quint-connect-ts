@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events"
 import { describe, expect, it, vi } from "vitest"
 
 import { makeRunEvaluatorProcess } from "../src/cli/compiled-evaluator-adapter.js"
+import { runManagedProcess } from "../src/cli/managed-process.js"
 import { makePlatformProcessBoundary } from "../src/cli/platform-process.js"
 import { makeRunQuintProcess } from "../src/cli/quint-cli-adapter.js"
 
@@ -82,6 +83,76 @@ class FakeEvaluatorProcess extends EventEmitter {
 }
 
 describe("platform process boundary", () => {
+  it("shares close, startup-error, and lifecycle handling across subprocess adapters", async () => {
+    const platform = makeBoundary("linux")
+    const completed = new FakeProcess(90)
+    const completedResult = Effect.runPromise(runManagedProcess({
+      processBoundary: platform.boundary,
+      spawn: () => completed,
+      captureResult: (process) => {
+        process.stderr.on("data", () => undefined)
+        return (exitCode) => ({ exitCode })
+      }
+    }))
+
+    completed.emit("close", 0)
+    await expect(completedResult).resolves.toEqual({ exitCode: 0 })
+    expect(platform.exitListeners).toEqual([])
+
+    const failed = new FakeProcess(91)
+    const failedResult = Effect.runPromise(runManagedProcess({
+      processBoundary: platform.boundary,
+      spawn: () => failed,
+      captureResult: () => () => undefined
+    }))
+    failed.emit("error", Object.assign(new Error("missing"), { code: "ENOENT" }))
+
+    await expect(failedResult).rejects.toMatchObject({
+      _tag: "ProcessStartError",
+      code: "ENOENT",
+      message: "missing"
+    })
+    expect(platform.exitListeners).toEqual([])
+  })
+
+  it("kills a spawned process when result capture throws synchronously", async () => {
+    const platform = makeBoundary("linux")
+    const child = new FakeProcess(92)
+
+    await expect(Effect.runPromise(runManagedProcess({
+      processBoundary: platform.boundary,
+      spawn: () => child,
+      captureResult: () => {
+        throw new Error("failed to attach stdio")
+      }
+    }))).rejects.toMatchObject({
+      _tag: "ProcessStartError",
+      message: "failed to attach stdio"
+    })
+
+    expect(platform.killProcess).toHaveBeenCalledWith(-92, "SIGKILL")
+    expect(platform.exitListeners).toEqual([])
+  })
+
+  it("kills a possibly-live process after a non-spawn error event", async () => {
+    const platform = makeBoundary("linux")
+    const child = new FakeProcess(93)
+    const result = Effect.runPromise(runManagedProcess({
+      processBoundary: platform.boundary,
+      spawn: () => child,
+      captureResult: () => () => undefined
+    }))
+
+    child.emit("error", new Error("process channel failed"))
+
+    await expect(result).rejects.toMatchObject({
+      _tag: "ProcessStartError",
+      message: "process channel failed"
+    })
+    expect(platform.killProcess).toHaveBeenCalledWith(-93, "SIGKILL")
+    expect(platform.exitListeners).toEqual([])
+  })
+
   it("selects POSIX command names, evaluator names, and detached process groups", () => {
     const { boundary } = makeBoundary("linux")
 

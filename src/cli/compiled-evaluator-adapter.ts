@@ -12,11 +12,16 @@ import {
 } from "./compiled-evaluator-input.js"
 import { normalizeEvaluatorOutput } from "./compiled-evaluator-output.js"
 import { QuintError, QuintNotFoundError } from "./errors.js"
+import { runManagedProcess } from "./managed-process.js"
 import { platformProcess } from "./platform-process.js"
 import type { PlatformProcessBoundary } from "./platform-process.js"
-import { isQuintRunGeneration, isQuintTestGeneration } from "./run-options.js"
 import type { TraceGenerationAdapter } from "./trace-adapter.js"
 import { readTraceFiles, writeTraceFiles } from "./trace-files.js"
+import {
+  isCompiledEvaluatorPolicy,
+  resolveTraceGenerationPolicy,
+  validateTraceGenerationConfiguration
+} from "./trace-generation-policy.js"
 
 interface EvaluatorResult {
   readonly stdout: string
@@ -104,35 +109,29 @@ export const makeRunEvaluatorProcess = (
   evaluatorPath: string,
   inputStr: string
 ): Effect.Effect<EvaluatorResult, QuintNotFoundError> =>
-  Effect.callback((resume) => {
-    let stdout = ""
-    let stderr = ""
-    const proc = spawnProcess(evaluatorPath, ["simulate-from-stdin"], {
-      stdio: ["pipe", "pipe", "pipe"],
-      detached: processBoundary.detached
-    })
-
-    const lifecycle = processBoundary.makeLifecycle(() => proc)
-
-    proc.stdin.write(inputStr)
-    proc.stdin.end()
-
-    proc.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString()
-    })
-    proc.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString()
-    })
-    proc.on("close", (code) => {
-      lifecycle.complete()
-      resume(Effect.succeed({ stdout, exitCode: code ?? 1, stderr }))
-    })
-    proc.on("error", (e) => {
-      lifecycle.complete()
-      resume(Effect.fail(new QuintNotFoundError({ message: `Failed to start Rust evaluator: ${e}` })))
-    })
-    return lifecycle.interrupt
-  })
+  runManagedProcess({
+    processBoundary,
+    spawn: () =>
+      spawnProcess(evaluatorPath, ["simulate-from-stdin"], {
+        stdio: ["pipe", "pipe", "pipe"],
+        detached: processBoundary.detached
+      }),
+    captureResult: (proc) => {
+      let stdout = ""
+      let stderr = ""
+      proc.stdin.write(inputStr)
+      proc.stdin.end()
+      proc.stdout.on("data", (chunk: Buffer) => {
+        stdout += chunk.toString()
+      })
+      proc.stderr.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString()
+      })
+      return (exitCode) => ({ stdout, exitCode, stderr })
+    }
+  }).pipe(
+    Effect.mapError((error) => new QuintNotFoundError({ message: `Failed to start Rust evaluator: ${error.message}` }))
+  )
 
 const runEvaluatorDirect = makeRunEvaluatorProcess()
 
@@ -152,18 +151,22 @@ const defaultDeps: CompiledEvaluatorAdapterDeps = {
 export const makeCompiledEvaluatorTraceAdapter = (
   deps: CompiledEvaluatorAdapterDeps = defaultDeps
 ): TraceGenerationAdapter => ({
-  canGenerate: (opts) =>
-    !isQuintTestGeneration(opts) && opts.compiledInput !== undefined && deps.compiledInputExists(opts.compiledInput),
+  canGenerate: (opts) => {
+    const policy = resolveTraceGenerationPolicy(opts)
+    return isCompiledEvaluatorPolicy(policy) && deps.compiledInputExists(policy.options.compiledInput)
+  },
   generate: (opts, outDir) =>
     Effect.gen(function*() {
-      if (!isQuintRunGeneration(opts) || opts.compiledInput === undefined) {
+      const policy = resolveTraceGenerationPolicy(opts)
+      if (!isCompiledEvaluatorPolicy(policy)) {
         return yield* new QuintError({ message: "Compiled input path is required for compiled evaluator generation" })
       }
-      const rawInput = yield* deps.readCompiledInput(opts.compiledInput)
+      yield* validateTraceGenerationConfiguration(policy.options)
+      const rawInput = yield* deps.readCompiledInput(policy.options.compiledInput)
       const compiledInput = yield* decodeCompiledEvaluatorInput(rawInput)
       const { input, seedHex } = patchCompiledEvaluatorInput(
         compiledInput,
-        opts,
+        policy.options,
         deps.cpuCount(),
         deps.randomSeedHex()
       )

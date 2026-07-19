@@ -216,7 +216,7 @@ Shared by `run`, `quintRun`, and `generateTraces`:
 | `init` | `string` | quint default | Run mode only: name of the init action |
 | `step` | `string` | quint default | Run mode only: name of the step action |
 | `main` | `string` | quint default | Name of the main module. Required when the `.qnt` file contains multiple modules. |
-| `backend` | `"typescript" \| "rust"` | `"typescript"` | Simulation backend. TypeScript works out of the box; `"rust"` requires the Rust evaluator. |
+| `backend` | `"typescript" \| "rust"` | `QUINT_BACKEND`, then `"typescript"` | Simulation backend. TypeScript works out of the box; `"rust"` requires the Rust evaluator. A present `QUINT_BACKEND` must be exactly `typescript` or `rust`; malformed values fail before Quint starts. |
 | `quintBin` | `string` | `QUINT_BIN`, then `quint` on `PATH` | Exact Quint executable path or command. An explicit value never falls back to `npx`, which is useful for pinned mise/Nix/toolchain installations. |
 | `invariants` | `string[]` | — | Run mode only: invariant names to check during simulation |
 | `witnesses` | `string[]` | — | Run mode only: witness names to report |

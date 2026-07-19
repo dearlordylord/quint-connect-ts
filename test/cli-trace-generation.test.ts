@@ -1,4 +1,4 @@
-import { Effect, Fiber } from "effect"
+import { ConfigProvider, Effect, Fiber } from "effect"
 import fc from "fast-check"
 import { EventEmitter } from "node:events"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
@@ -320,6 +320,29 @@ describe("compiled evaluator trace adapter", () => {
 
     // @ts-expect-error compiledInput is excluded from named-test mode, but guard widened JavaScript callers too.
     expect(makeCompiledEvaluatorTraceAdapter().canGenerate(structurallyWidenedTestOptions)).toBe(false)
+  })
+
+  it("fails malformed backend configuration before starting the compiled evaluator", async () => {
+    const readCompiledInput = vi.fn(() => Effect.succeed("{}"))
+    const runEvaluator = vi.fn(() => Effect.succeed({ exitCode: 0, stderr: "", stdout: "" }))
+    const adapter = makeCompiledEvaluatorTraceAdapter({
+      compiledInputExists: () => true,
+      cpuCount: () => 1,
+      getEvaluatorPath: () => "/fake/evaluator",
+      randomSeedHex: () => "a",
+      readCompiledInput,
+      runEvaluator
+    })
+    const program = adapter.generate({
+      spec: "counter.qnt",
+      compiledInput: "compiled.json"
+    }, "/tmp").pipe(
+      Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ QUINT_BACKEND: "invalid" })))
+    )
+
+    await expect(Effect.runPromise(program)).rejects.toMatchObject({ _tag: "QuintError" })
+    expect(readCompiledInput).not.toHaveBeenCalled()
+    expect(runEvaluator).not.toHaveBeenCalled()
   })
 
   it("kills the evaluator process group when the Effect is interrupted", async () => {
