@@ -28,7 +28,10 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "skills",
+    "bin",
+    "!skills/_artifacts"
   ],
   "publishConfig": {
     "access": "public"
@@ -66,7 +69,8 @@
     "itf",
     "effect",
     "property-based-testing",
-    "state-machine"
+    "state-machine",
+    "tanstack-intent"
   ],
   "packageManager": "pnpm@10.29.3",
   "author": "dearlordylord",
@@ -107,6 +111,7 @@
     "@effect/language-service": "^0.73.1",
     "@effect/vitest": "4.0.0-beta.31",
     "@eslint/compat": "^2.0.2",
+    "@tanstack/intent": "^0.0.14",
     "@types/node": "^25.1.0",
     "@typescript-eslint/parser": "^8.54.0",
     "eslint": "^9.39.2",
@@ -124,5 +129,8 @@
     "typescript-eslint": "^8.54.0",
     "vitest": "latest",
     "zod": "^4.3.6"
+  },
+  "bin": {
+    "intent": "./bin/intent.js"
   }
 }

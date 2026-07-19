@@ -18,9 +18,10 @@ describe("vitest-simple entry point", () => {
     maxSamples: 3,
     maxSteps: 5,
     seed: "1",
-    driver: defineDriver({ Increment: { amount: ZodITFBigInt } }, () => {
+    driver: defineDriver({ init: {}, Increment: { amount: ZodITFBigInt } }, () => {
       let count = 0n
       return {
+        init: () => {},
         Increment: ({ amount }) => {
           count += amount
         },

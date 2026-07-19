@@ -2,7 +2,6 @@ export {
   defaultConfig,
   defineDriver,
   NoTracesError,
-  pickFrom,
   QuintError,
   QuintNotFoundError,
   run,

@@ -42,27 +42,24 @@ interface AnyActionDefHandler<E, R> {
 export type AnyActionDef<E = never, R = never> = AnyActionDefSchema & AnyActionDefHandler<E, R>
 
 export interface ActionMap<E = never, R = never> {
-  readonly [action: string]: AnyActionDef<E, R>
+  readonly [action: string]: AnyActionDef<E, R> | undefined
 }
 
-interface DriverActions<Actions> {
+interface DriverActions<Actions extends ActionMap<E, R>, E, R> {
   readonly actions: Actions
 }
 
 interface DriverHooks<S, E, R> {
   readonly getState?: () => Effect.Effect<S, E, R>
   readonly config?: () => Config
-  readonly step?: (action: string, nondetPicks: ReadonlyMap<string, unknown>) => Effect.Effect<void, E, R>
 }
 
-export type Driver<S, E = never, R = never, Actions = ActionMap<E, R>> =
-  & DriverActions<Actions>
+export type Driver<S, E = never, R = never, Actions extends ActionMap<E, R> = ActionMap<E, R>> =
+  & DriverActions<Actions, E, R>
   & DriverHooks<S, E, R>
 
-export interface DriverFactory<S, E = never, R = never, Actions = ActionMap<E, R>> {
+export interface DriverFactory<S, E = never, R = never, Actions extends ActionMap<E, R> = ActionMap<E, R>> {
   readonly create: () => Effect.Effect<Driver<S, E, R, Actions>, E, R>
 }
-
-export type PartialActionMap<E = never, R = never> = Partial<Record<string, AnyActionDef<E, R>>>
 
 export type StateComparator<S> = (spec: S, impl: S) => boolean
