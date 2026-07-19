@@ -11,6 +11,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const packageManifest = JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8"))
 const runtime = process.env.PACKED_CONSUMER_RUNTIME ?? "node"
 const runtimeCommand = runtime === "node" ? process.execPath : runtime === "bun" ? "bun" : undefined
+const parserRelease = `@firfi/itf-trace-parser@${packageManifest.dependencies["@firfi/itf-trace-parser"]}`
 
 if (runtimeCommand === undefined) {
   throw new Error(`Unsupported packed-consumer runtime: ${runtime}`)
@@ -56,7 +57,14 @@ try {
   smokeRoot = await mkdtemp(join(tmpdir(), "quint-connect-packed-consumer-"))
   const tarball = join(smokeRoot, "quint-connect.tgz")
 
-  run("pnpm", ["pack", "--out", tarball], { env: { HUSKY: "0" } })
+  await writeFile(
+    join(smokeRoot, "pnpm-workspace.yaml"),
+    `minimumReleaseAgeExclude:\n  - '${parserRelease}'\n`
+  )
+
+  run("pnpm", ["pack", "--out", tarball], {
+    env: { HUSKY: "0", npm_config_dry_run: "false" }
+  })
 
   const packedManifest = JSON.parse(run("tar", ["-xOf", tarball, "package/package.json"]))
   const packedFiles = new Set(
