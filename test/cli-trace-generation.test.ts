@@ -152,6 +152,7 @@ describe("Quint CLI trace adapter", () => {
     }
 
     expect(spawned[1]?.cmd).toBe("npx")
+    expect(spawned.map(({ cmd }) => cmd)).toEqual(["quint", "npx"])
     expect(spawned[1]?.args).toEqual(["@informalsystems/quint", "run", "counter.qnt"])
 
     quintProc.emit("close", 1)

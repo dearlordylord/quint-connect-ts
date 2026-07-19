@@ -1,8 +1,9 @@
+import spawn from "cross-spawn"
 import { Effect, Predicate } from "effect"
-import { spawn } from "node:child_process"
 
 import { QuintError, QuintNotFoundError } from "./errors.js"
-import { makeProcessGroupLifecycle } from "./process-group-lifecycle.js"
+import { platformProcess } from "./platform-process.js"
+import type { PlatformProcessBoundary } from "./platform-process.js"
 import type { RunOptions } from "./run-options.js"
 import { DEFAULT_MAX_SAMPLES, DEFAULT_N_TRACES } from "./run-options.js"
 import type { TraceGenerationAdapter } from "./trace-adapter.js"
@@ -38,7 +39,7 @@ interface QuintProcess {
 type SpawnQuintProcess = (
   cmd: string,
   args: ReadonlyArray<string>,
-  options: { readonly env: NodeJS.ProcessEnv; readonly detached: true }
+  options: { readonly env: NodeJS.ProcessEnv; readonly detached: boolean }
 ) => QuintProcess
 
 export const buildRunArgs = (
@@ -90,13 +91,17 @@ export const buildRunArgs = (
 export const makeRunQuintProcess = (
   spawnProcess: SpawnQuintProcess = (cmd, cmdArgs, options) => {
     const proc = spawn(cmd, [...cmdArgs], options)
+    if (proc.stdout === null || proc.stderr === null) {
+      throw new Error("Quint process was spawned without piped output")
+    }
     return {
       pid: proc.pid,
       stdout: proc.stdout,
       stderr: proc.stderr,
       on: proc.on.bind(proc)
     }
-  }
+  },
+  processBoundary: PlatformProcessBoundary = platformProcess
 ) =>
 (
   args: ReadonlyArray<string>,
@@ -106,7 +111,7 @@ export const makeRunQuintProcess = (
     const env = verbose ? { ...process.env, QUINT_VERBOSE: "true" } : process.env
     let completeProcess = () => {}
     const startProc = (cmd: string, cmdArgs: ReadonlyArray<string>) => {
-      const proc = spawnProcess(cmd, cmdArgs, { env, detached: true })
+      const proc = spawnProcess(cmd, cmdArgs, { env, detached: processBoundary.detached })
       let stderr = ""
       proc.stdout.resume()
       proc.stderr.on("data", (chunk: Buffer) => {
@@ -123,11 +128,11 @@ export const makeRunQuintProcess = (
         if (proc !== activeProc) {
           return
         }
-        if (Predicate.isObject(e) && e["code"] === "ENOENT" && cmd === "quint") {
+        if (Predicate.isObject(e) && e["code"] === "ENOENT" && cmd === processBoundary.commandName("quint")) {
           console.warn(
             "[quint-connect] 'quint' not found on PATH, falling back to npx (slower). Install globally: npm i -g @informalsystems/quint"
           )
-          activeProc = startProc("npx", ["@informalsystems/quint", ...cmdArgs])
+          activeProc = startProc(processBoundary.commandName("npx"), ["@informalsystems/quint", ...cmdArgs])
         } else {
           completeProcess()
           resume(Effect.fail(new QuintNotFoundError({ message: `Failed to start quint: ${e}` })))
@@ -136,8 +141,8 @@ export const makeRunQuintProcess = (
       return proc
     }
 
-    let activeProc = startProc("quint", [...args])
-    const lifecycle = makeProcessGroupLifecycle(() => activeProc)
+    let activeProc = startProc(processBoundary.commandName("quint"), [...args])
+    const lifecycle = processBoundary.makeLifecycle(() => activeProc)
     completeProcess = lifecycle.complete
 
     return lifecycle.interrupt

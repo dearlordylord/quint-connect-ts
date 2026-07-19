@@ -1,5 +1,5 @@
+import spawn from "cross-spawn"
 import { Effect } from "effect"
-import { spawn } from "node:child_process"
 import { existsSync, readdirSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { cpus, homedir } from "node:os"
@@ -12,7 +12,8 @@ import {
 } from "./compiled-evaluator-input.js"
 import { normalizeEvaluatorOutput } from "./compiled-evaluator-output.js"
 import { QuintError, QuintNotFoundError } from "./errors.js"
-import { makeProcessGroupLifecycle } from "./process-group-lifecycle.js"
+import { platformProcess } from "./platform-process.js"
+import type { PlatformProcessBoundary } from "./platform-process.js"
 import type { TraceGenerationAdapter } from "./trace-adapter.js"
 import { readTraceFiles, writeTraceFiles } from "./trace-files.js"
 
@@ -44,7 +45,7 @@ interface EvaluatorProcess {
 type SpawnEvaluatorProcess = (
   evaluatorPath: string,
   args: ReadonlyArray<string>,
-  options: { readonly stdio: ["pipe", "pipe", "pipe"]; readonly detached: true }
+  options: { readonly stdio: ["pipe", "pipe", "pipe"]; readonly detached: boolean }
 ) => EvaluatorProcess
 
 interface CompiledEvaluatorAdapterDeps {
@@ -59,7 +60,9 @@ interface CompiledEvaluatorAdapterDeps {
   ) => Effect.Effect<EvaluatorResult, QuintNotFoundError>
 }
 
-const getRustEvaluatorPath = (): string => {
+const getRustEvaluatorPath = (
+  processBoundary: PlatformProcessBoundary = platformProcess
+): string => {
   const quintDir = join(homedir(), ".quint")
   if (!existsSync(quintDir)) {
     throw new Error(`Quint home directory not found: ${quintDir}`)
@@ -73,7 +76,7 @@ const getRustEvaluatorPath = (): string => {
     ? dirs.find((dir) => dir.includes(preferredVersion))
     : undefined
   const latest = preferred ?? dirs[dirs.length - 1]
-  const exePath = join(quintDir, latest, "quint_evaluator")
+  const exePath = join(quintDir, latest, processBoundary.executableName("quint_evaluator"))
   if (!existsSync(exePath)) {
     throw new Error(`Rust evaluator binary not found: ${exePath}`)
   }
@@ -81,7 +84,20 @@ const getRustEvaluatorPath = (): string => {
 }
 
 export const makeRunEvaluatorProcess = (
-  spawnProcess: SpawnEvaluatorProcess = (evaluatorPath, args, options) => spawn(evaluatorPath, [...args], options)
+  spawnProcess: SpawnEvaluatorProcess = (evaluatorPath, args, options) => {
+    const proc = spawn(evaluatorPath, [...args], options)
+    if (proc.stdin === null || proc.stdout === null || proc.stderr === null) {
+      throw new Error("Rust evaluator was spawned without piped stdio")
+    }
+    return {
+      pid: proc.pid,
+      stdin: proc.stdin,
+      stdout: proc.stdout,
+      stderr: proc.stderr,
+      on: proc.on.bind(proc)
+    }
+  },
+  processBoundary: PlatformProcessBoundary = platformProcess
 ) =>
 (
   evaluatorPath: string,
@@ -92,10 +108,10 @@ export const makeRunEvaluatorProcess = (
     let stderr = ""
     const proc = spawnProcess(evaluatorPath, ["simulate-from-stdin"], {
       stdio: ["pipe", "pipe", "pipe"],
-      detached: true
+      detached: processBoundary.detached
     })
 
-    const lifecycle = makeProcessGroupLifecycle(() => proc)
+    const lifecycle = processBoundary.makeLifecycle(() => proc)
 
     proc.stdin.write(inputStr)
     proc.stdin.end()

@@ -1,5 +1,4 @@
-import { Effect, Option, Schema } from "effect"
-import { execFile } from "node:child_process"
+import { Effect } from "effect"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -8,6 +7,7 @@ import type { ItfTrace } from "../itf/schema.js"
 import { compiledEvaluatorTraceAdapter } from "./compiled-evaluator-adapter.js"
 import type { QuintNotFoundError } from "./errors.js"
 import { QuintError } from "./errors.js"
+import { platformProcess } from "./platform-process.js"
 import { quintCliTraceAdapter } from "./quint-cli-adapter.js"
 import type { RunOptions } from "./run-options.js"
 import type { TraceGenerationAdapter } from "./trace-adapter.js"
@@ -54,31 +54,15 @@ const generateTracesWithTempDir = (
   )
 
 /** Warn if zombie quint_evaluator processes are running because they cause large slowdowns. */
-const ZombieEvaluatorCount = Schema.NumberFromString
-
-const countZombieEvaluators = (): Effect.Effect<number> =>
-  Effect.callback((resume) => {
-    const process = execFile("pgrep", ["-c", "quint_evaluator"], { encoding: "utf8" }, (error, stdout) => {
-      if (error !== null) {
-        resume(Effect.succeed(0))
-        return
-      }
-      const decoded = Schema.decodeUnknownOption(ZombieEvaluatorCount)(stdout.trim())
-      resume(Effect.succeed(Option.isSome(decoded) ? decoded.value : 0))
-    })
-    return Effect.sync(() => process.kill())
-  })
-
-/** Warn if zombie quint_evaluator processes are running because they cause large slowdowns. */
 const warnZombieEvaluators = (): Effect.Effect<void> =>
   Effect.gen(function*() {
-    const count = yield* countZombieEvaluators()
+    const count = yield* platformProcess.countEvaluatorProcesses
     if (count > 0) {
       yield* Effect.sync(() => {
         console.warn(
           `[quint-connect] WARNING: Found ${count} running quint_evaluator process(es). `
             + `These consume 100% CPU each and will slow down this run by ~40x. `
-            + `Kill them: killall -9 quint_evaluator`
+            + `Kill them: ${platformProcess.evaluatorCleanupHint}`
         )
       })
     }
