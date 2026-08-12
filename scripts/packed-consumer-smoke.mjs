@@ -12,6 +12,7 @@ const packageManifest = JSON.parse(await readFile(join(repoRoot, "package.json")
 const runtime = process.env.PACKED_CONSUMER_RUNTIME ?? "node"
 const runtimeCommand = runtime === "node" ? process.execPath : runtime === "bun" ? "bun" : undefined
 const parserRelease = `@firfi/itf-trace-parser@${packageManifest.dependencies["@firfi/itf-trace-parser"]}`
+const effectRelease = `effect@${packageManifest.dependencies.effect}`
 
 if (runtimeCommand === undefined) {
   throw new Error(`Unsupported packed-consumer runtime: ${runtime}`)
@@ -60,7 +61,7 @@ try {
 
   await writeFile(
     join(smokeRoot, "pnpm-workspace.yaml"),
-    `minimumReleaseAgeExclude:\n  - '${parserRelease}'\n`
+    `minimumReleaseAgeExclude:\n  - '${parserRelease}'\n  - '${effectRelease}'\n`
   )
 
   run("pnpm", ["pack", "--out", tarball], {

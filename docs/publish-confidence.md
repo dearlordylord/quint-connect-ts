@@ -14,7 +14,7 @@ The publish checks are split by the boundary they protect. This keeps ordinary f
 - installs the tarball with pnpm's prefer-offline mode in a fresh temporary project;
 - imports the default, Effect, Vitest, and Vitest Simple entrypoints without Zod installed;
 - verifies the installed manifest has the expected package version and exact parser dependency;
-- runs a huge integer through one real trace and state check via the explicit local `quintBin` and Effect `4.0.0-beta.99`;
+- runs a huge integer through one real trace and state check via the explicit local `quintBin` and Effect `4.0.0-rc.108`;
 - executes the packed `intent` bin and verifies its expected missing-optional-tool diagnostic;
 - installs Zod only after the Effect-only check, then runs the default/simple API through a real Zod-decoded trace;
 - strictly typechecks representative public simple and Effect API consumers against the installed tarball; and
@@ -22,7 +22,7 @@ The publish checks are split by the boundary they protect. This keeps ordinary f
 
 The packed test deliberately avoids registry publication, `npx`, network fallback for Quint, temporary Changesets versioning, and `npm publish --dry-run`. Those operations either mutate release state or duplicate the package contents already validated from the tarball.
 
-The temporary consumer exempts only the manifest's exact `@firfi/itf-trace-parser` version from pnpm's minimum-release-age policy. The root frozen-lockfile install has already fetched and integrity-checked that release; the prefer-offline consumer reuses cached content but may fetch missing registry metadata. This lets a freshly published parser prerelease pass the dependent package's release gate without disabling the age policy for unrelated packages.
+The temporary consumer exempts the manifest's exact `@firfi/itf-trace-parser` and Effect versions from pnpm's minimum-release-age policy. The root frozen-lockfile install has already fetched and integrity-checked those releases; the prefer-offline consumer reuses cached content but may fetch missing registry metadata. This lets fresh prereleases pass the dependent package's release gate without disabling the age policy for unrelated packages.
 
 ## CI policy
 

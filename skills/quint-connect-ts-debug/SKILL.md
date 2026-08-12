@@ -25,7 +25,7 @@ sources:
 
 This only matters if the project uses `effect` as a dependency (Effect API path). The Simple API error handling is identical across both versions. Install the correct dist-tag: `@firfi/quint-connect@latest` for `effect@^3`, `@firfi/quint-connect@effect4` for `effect@^4`. See `quint-connect-ts-setup` skill for full details and API difference table.
 
-The error classes (`StateMismatchError`, `TraceReplayError`, etc.) work the same way in both versions. Internally they use `Schema.TaggedError` (Effect 3) or `Schema.TaggedErrorClass` (Effect 4), but the user-facing API (`Effect.catchTag`, error fields) is unchanged.
+The error classes (`StateMismatchError`, `TraceReplayError`, etc.) use `Schema.TaggedError` on both release lines, and the user-facing API (`Effect.catchTag`, error fields) is unchanged.
 
 ## Error Types
 

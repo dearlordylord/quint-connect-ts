@@ -48,7 +48,7 @@ Key Effect API differences between the two versions (internals only — the quin
 
 | Effect 3 (`@latest`) | Effect 4 (`@effect4`) |
 |---|---|
-| `Schema.TaggedError` | `Schema.TaggedErrorClass` |
+| `Schema.TaggedError` | `Schema.TaggedError` (same) |
 | `Schema.decodeUnknown(S)(value)` | `Schema.decodeUnknownEffect(S)(value)` |
 | `Schema.optionalWith(S, { default: () => v })` | `Schema.optional(S).pipe(Schema.withDecodingDefault(() => v))` |
 | `@effect/platform-node` separate package | Platform merged into `effect` |

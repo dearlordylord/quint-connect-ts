@@ -25,13 +25,13 @@ pnpm add @firfi/quint-connect
 pnpm add zod
 
 # For the Effect 4 prerelease API (npm latest remains on Effect 3):
-pnpm add @firfi/quint-connect@effect4 effect@4.0.0-beta.99
+pnpm add @firfi/quint-connect@effect4 effect@4.0.0-rc.108
 
 # For Effect vitest helper (quintIt):
-pnpm add -D @effect/vitest@4.0.0-beta.99
+pnpm add -D @effect/vitest@4.0.0-rc.108 vitest@^4.1.10
 ```
 
-The `effect4` prerelease line targets Effect `4.0.0-beta.99`. The untagged `latest` package continues to distribute the Effect 3 build.
+The `effect4` prerelease line targets Effect `4.0.0-rc.108`. The untagged `latest` package continues to distribute the Effect 3 build.
 
 **Requirements:** Node.js 22+ (for lossless evaluator JSON decoding), ESM (`"type": "module"` in package.json), and the [Quint CLI](https://github.com/informalsystems/quint). The launcher uses `quintBin`, then `QUINT_BIN`, then `quint` on `PATH`; only when the default `PATH` lookup fails does it fall back to `npx @informalsystems/quint`.
 

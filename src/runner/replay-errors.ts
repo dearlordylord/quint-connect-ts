@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect"
 
-export class StateMismatchError extends Schema.TaggedErrorClass<StateMismatchError>()("StateMismatchError", {
+export class StateMismatchError extends Schema.TaggedError<StateMismatchError>()("StateMismatchError", {
   message: Schema.String,
   traceIndex: Schema.Number,
   stepIndex: Schema.Number,
@@ -12,7 +12,7 @@ export class StateMismatchError extends Schema.TaggedErrorClass<StateMismatchErr
   )
 }) {}
 
-export class TraceReplayError extends Schema.TaggedErrorClass<TraceReplayError>()("TraceReplayError", {
+export class TraceReplayError extends Schema.TaggedError<TraceReplayError>()("TraceReplayError", {
   message: Schema.String,
   traceIndex: Schema.Number,
   stepIndex: Schema.Number,
@@ -20,7 +20,7 @@ export class TraceReplayError extends Schema.TaggedErrorClass<TraceReplayError>(
   cause: Schema.optional(Schema.Unknown)
 }) {}
 
-export class NoTracesError extends Schema.TaggedErrorClass<NoTracesError>()("NoTracesError", {
+export class NoTracesError extends Schema.TaggedError<NoTracesError>()("NoTracesError", {
   message: Schema.String
 }) {}
 

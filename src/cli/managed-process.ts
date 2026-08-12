@@ -11,7 +11,7 @@ interface ManagedProcess {
   }
 }
 
-class ProcessStartError extends Schema.TaggedErrorClass<ProcessStartError>()("ProcessStartError", {
+class ProcessStartError extends Schema.TaggedError<ProcessStartError>()("ProcessStartError", {
   message: Schema.String,
   code: Schema.optional(Schema.String)
 }) {}
