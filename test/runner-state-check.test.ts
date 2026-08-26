@@ -7,7 +7,7 @@ import { ITFBigInt } from "@firfi/itf-trace-parser/effect"
 import { StateMismatchError, TraceReplayError } from "../src/runner/runner.js"
 import { checkReplayState } from "../src/runner/state-check.js"
 
-class StateDecodeError extends Schema.TaggedErrorClass<StateDecodeError>()("StateDecodeError", {
+class StateDecodeError extends Schema.TaggedError<StateDecodeError>()("StateDecodeError", {
   message: Schema.String
 }) {}
 

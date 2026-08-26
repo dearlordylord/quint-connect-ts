@@ -14,7 +14,8 @@ The publish checks are split by the boundary they protect. This keeps ordinary f
 - installs the tarball with pnpm's prefer-offline mode in a fresh temporary project;
 - imports the default, Effect, Vitest, and Vitest Simple entrypoints without Zod installed;
 - verifies the installed manifest has the expected package version and exact parser dependency;
-- runs a huge integer through one real trace and state check via the explicit local `quintBin` and Effect `4.0.0-beta.99`;
+- runs a huge integer through one real trace and state check via the explicit local `quintBin` and Effect `4.0.0-rc.112`;
+- locates the installed packed `@firfi/quint-connect` node and audits its direct parser/Effect edges, proving the published parser peer resolves to that same single exact Effect runtime without a peer override;
 - executes the packed `intent` bin and verifies its expected missing-optional-tool diagnostic;
 - installs Zod only after the Effect-only check, then runs the default/simple API through a real Zod-decoded trace;
 - strictly typechecks representative public simple and Effect API consumers against the installed tarball; and
@@ -22,10 +23,10 @@ The publish checks are split by the boundary they protect. This keeps ordinary f
 
 The packed test deliberately avoids registry publication, `npx`, network fallback for Quint, temporary Changesets versioning, and `npm publish --dry-run`. Those operations either mutate release state or duplicate the package contents already validated from the tarball.
 
-The temporary consumer exempts only the manifest's exact `@firfi/itf-trace-parser` version from pnpm's minimum-release-age policy. The root frozen-lockfile install has already fetched and integrity-checked that release; the prefer-offline consumer reuses cached content but may fetch missing registry metadata. This lets a freshly published parser prerelease pass the dependent package's release gate without disabling the age policy for unrelated packages.
+The temporary consumer exempts the manifest's exact `@firfi/itf-trace-parser` and Effect versions from pnpm's minimum-release-age policy. The root frozen-lockfile install has already fetched and integrity-checked those releases; the prefer-offline consumer reuses cached content but may fetch missing registry metadata. This lets fresh prereleases pass the dependent package's release gate without disabling the age policy for unrelated packages.
 
 ## CI policy
 
-The Node 22 packed-consumer job runs after `pnpm run ci` on every push and pull request and is required publish evidence. Bun 1.3.14 runs the same smoke procedure from the same package source on the weekly schedule and on manual workflow dispatch; its separate job builds its own tarball. Bun is retained because it represents a real consumer workload, but it is not in the pull-request critical path because runtime installation and cross-runtime behavior add cost and a separate source of CI failures.
+The Node 22.19.0 packed-consumer job runs after `pnpm run ci` on every push and pull request and is required publish evidence. Bun 1.3.14 runs the same smoke procedure from the same package source on the weekly schedule and on manual workflow dispatch; its separate job builds its own tarball. Bun is retained because it represents a real consumer workload, but it is not in the pull-request critical path because runtime installation and cross-runtime behavior add cost and a separate source of CI failures.
 
 Before publishing, both `pnpm run ci` and the Node packed-consumer smoke must pass; `prepublishOnly` runs both. For releases whose advertised workload depends on Bun, also require a recent successful scheduled Bun job or manually dispatch the workflow before publishing.

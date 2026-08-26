@@ -14,7 +14,7 @@ class ReplayService extends Context.Service<ReplayService, {
   readonly record: (amount: string) => void
 }>()("test/ReplayService") {}
 
-class StateDecodeError extends Schema.TaggedErrorClass<StateDecodeError>()("StateDecodeError", {
+class StateDecodeError extends Schema.TaggedError<StateDecodeError>()("StateDecodeError", {
   message: Schema.String
 }) {}
 
@@ -24,12 +24,12 @@ class StateDecodeService extends Context.Service<StateDecodeService, {
 
 const withTraceDir = <A, E, R>(use: (traceDir: string) => Effect.Effect<A, E, R>) =>
   Effect.acquireUseRelease(
-    Effect.promise(() => mkdtemp(join(tmpdir(), "quint-connect-beta99-"))),
+    Effect.promise(() => mkdtemp(join(tmpdir(), "quint-connect-rc-"))),
     use,
     (traceDir) => Effect.promise(() => rm(traceDir, { recursive: true, force: true }))
   )
 
-describe("Effect beta.99 compatibility", () => {
+describe("Effect 4 RC compatibility", () => {
   it.effect("preserves driver service requirements through quintRun", () =>
     Effect.gen(function*() {
       const recorded: Array<string> = []
