@@ -1,6 +1,6 @@
 {
   "name": "@firfi/quint-connect",
-  "version": "2.0.2-effect4.1",
+  "version": "2.0.2-effect4.2",
   "description": "Model-based testing framework connecting Quint specifications to TypeScript implementations",
   "type": "module",
   "engines": {

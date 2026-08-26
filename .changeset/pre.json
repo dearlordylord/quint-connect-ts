@@ -9,6 +9,7 @@
     "bright-drivers-replay",
     "centralize-generation-process",
     "effect4-migration",
+    "effect4-rc",
     "harden-effect-parser-contract",
     "inject-trace-generation",
     "lossless-cross-platform-traces",
