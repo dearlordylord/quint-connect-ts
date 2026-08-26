@@ -27,7 +27,7 @@ sources:
 
 ## Prerequisites
 
-- Node.js 22+ (for lossless evaluator JSON decoding)
+- Node.js 22.19.0+ (for lossless evaluator JSON decoding and the Effect 4 runtime cohort)
 - ESM project (`"type": "module"` in package.json)
 - Quint CLI on PATH (`npx @informalsystems/quint` works without global install)
 

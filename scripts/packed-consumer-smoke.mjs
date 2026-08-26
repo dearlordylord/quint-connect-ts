@@ -6,14 +6,12 @@ import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { validatePackageContract } from "./package-contract.mjs"
+import { validatePackedConsumerGraph } from "./packed-consumer-graph.mjs"
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const packageManifest = JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8"))
 const runtime = process.env.PACKED_CONSUMER_RUNTIME ?? "node"
 const runtimeCommand = runtime === "node" ? process.execPath : runtime === "bun" ? "bun" : undefined
-const parserRelease = `@firfi/itf-trace-parser@${packageManifest.dependencies["@firfi/itf-trace-parser"]}`
-const effectRelease = `effect@${packageManifest.dependencies.effect}`
-
 if (runtimeCommand === undefined) {
   throw new Error(`Unsupported packed-consumer runtime: ${runtime}`)
 }
@@ -53,22 +51,35 @@ const installConsumer = async (consumerRoot, dependencies) => {
   ], { cwd: consumerRoot })
 }
 
+const assertPackedConsumerGraph = async (consumerRoot, packedManifest) => {
+  const consumerManifest = JSON.parse(await readFile(join(consumerRoot, "package.json"), "utf8"))
+  assert.equal(consumerManifest.pnpm?.overrides, undefined)
+  assert.equal(consumerManifest.pnpm?.peerDependencyRules, undefined)
+  assert.equal(packedManifest.pnpm?.overrides, undefined)
+  assert.equal(packedManifest.pnpm?.peerDependencyRules, undefined)
+
+  const dependencyTree = JSON.parse(run("pnpm", ["list", "--depth", "Infinity", "--json"], { cwd: consumerRoot }))[0]
+  assert.deepEqual(validatePackedConsumerGraph(dependencyTree, packedManifest), [])
+}
+
 let smokeRoot
 let failure
 try {
   smokeRoot = await mkdtemp(join(tmpdir(), "quint-connect-packed-consumer-"))
   const tarball = join(smokeRoot, "quint-connect.tgz")
 
-  await writeFile(
-    join(smokeRoot, "pnpm-workspace.yaml"),
-    `minimumReleaseAgeExclude:\n  - '${parserRelease}'\n  - '${effectRelease}'\n`
-  )
-
   run("pnpm", ["pack", "--out", tarball], {
     env: { HUSKY: "0", npm_config_dry_run: "false" }
   })
 
   const packedManifest = JSON.parse(run("tar", ["-xOf", tarball, "package/package.json"]))
+  const parserRelease = `@firfi/itf-trace-parser@${packedManifest.dependencies["@firfi/itf-trace-parser"]}`
+  const effectRelease = `effect@${packedManifest.dependencies.effect}`
+  await writeFile(
+    join(smokeRoot, "pnpm-workspace.yaml"),
+    `minimumReleaseAgeExclude:\n  - '${parserRelease}'\n  - '${effectRelease}'\n`
+  )
+
   const packedFiles = new Set(
     run("tar", ["-tzf", tarball])
       .split("\n")
@@ -90,14 +101,15 @@ try {
   const packageDependency = `file:${tarball}`
   await installConsumer(smokeRoot, {
     "@firfi/quint-connect": packageDependency,
-    effect: packageManifest.dependencies.effect
+    effect: packedManifest.dependencies.effect
   })
+  await assertPackedConsumerGraph(smokeRoot, packedManifest)
 
   const quintBin = join(repoRoot, "node_modules", ".bin", "quint")
   await access(quintBin)
   const consumerEnv = {
-    PACKED_CONSUMER_PACKAGE_VERSION: packageManifest.version,
-    PACKED_CONSUMER_PARSER_VERSION: packageManifest.dependencies["@firfi/itf-trace-parser"],
+    PACKED_CONSUMER_PACKAGE_VERSION: packedManifest.version,
+    PACKED_CONSUMER_PARSER_VERSION: packedManifest.dependencies["@firfi/itf-trace-parser"],
     PACKED_CONSUMER_QUINT_BIN: quintBin,
     PACKED_CONSUMER_SPEC: join(smokeRoot, "packed consumer spec.qnt")
   }
@@ -120,10 +132,11 @@ try {
   await installConsumer(smokeRoot, {
     "@firfi/quint-connect": packageDependency,
     "@types/node": packageManifest.devDependencies["@types/node"],
-    effect: packageManifest.dependencies.effect,
+    effect: packedManifest.dependencies.effect,
     typescript: packageManifest.devDependencies.typescript,
     zod: packageManifest.devDependencies.zod
   })
+  await assertPackedConsumerGraph(smokeRoot, packedManifest)
   run(runtimeCommand, [join(smokeRoot, "packed-consumer-zod.mjs")], {
     cwd: smokeRoot,
     env: consumerEnv
