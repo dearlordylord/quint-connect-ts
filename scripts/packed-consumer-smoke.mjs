@@ -20,7 +20,7 @@ const RepositoryManifest = Schema.parseJson(Schema.Struct({
     "@firfi/itf-trace-parser": Schema.String,
     effect: Schema.String
   }),
-  devDependencies: Schema.Struct({ zod: Schema.String })
+  devDependencies: Schema.Struct({ zod: Schema.String, typescript: Schema.String, "@types/node": Schema.String })
 }))
 const Runtime = Schema.Literal("node", "bun")
 const SpawnResult = Schema.Struct({
@@ -143,7 +143,7 @@ const validateBaseConsumer = (smokeRoot, tarball, packageManifest, runtimeComman
       join(smokeRoot, "packed-consumer.mjs")
     ))
     yield* fileOperation("Failed to copy counter fixture", () =>
-      copyFile(join(repoRoot, "test/specs/counter.qnt"), join(smokeRoot, "counter.qnt")))
+      copyFile(join(repoRoot, "test/fixtures/packed-consumer.qnt"), join(smokeRoot, "packed consumer spec.qnt")))
 
     yield* installConsumer(smokeRoot, {
       "@firfi/quint-connect": `file:${tarball}`,
@@ -156,7 +156,9 @@ const validateBaseConsumer = (smokeRoot, tarball, packageManifest, runtimeComman
       cwd: smokeRoot,
       env: {
         PACKED_CONSUMER_QUINT_BIN: quintBin,
-        PACKED_CONSUMER_SPEC: join(smokeRoot, "counter.qnt")
+        PACKED_CONSUMER_SPEC: join(smokeRoot, "packed consumer spec.qnt"),
+        PACKED_CONSUMER_PACKAGE_VERSION: packageManifest.version,
+        PACKED_CONSUMER_PARSER_VERSION: packageManifest.dependencies["@firfi/itf-trace-parser"]
       }
     })
 
@@ -179,9 +181,32 @@ const validateZodConsumer = (smokeRoot, tarball, packageManifest, runtimeCommand
     yield* installConsumer(smokeRoot, {
       "@firfi/quint-connect": `file:${tarball}`,
       effect: packageManifest.dependencies.effect,
-      zod: packageManifest.devDependencies.zod
+      zod: packageManifest.devDependencies.zod,
+      typescript: packageManifest.devDependencies.typescript,
+      "@types/node": packageManifest.devDependencies["@types/node"]
     })
-    yield* run(runtimeCommand, [join(smokeRoot, "packed-consumer-zod.mjs")], { cwd: smokeRoot })
+    yield* run(runtimeCommand, [join(smokeRoot, "packed-consumer-zod.mjs")], {
+      cwd: smokeRoot,
+      env: {
+        PACKED_CONSUMER_QUINT_BIN: join(repoRoot, "node_modules", ".bin", "quint"),
+        PACKED_CONSUMER_SPEC: join(smokeRoot, "packed consumer spec.qnt")
+      }
+    })
+    yield* fileOperation("Failed to copy public type consumer", () => copyFile(
+      join(repoRoot, "test/fixtures/packed-consumer-types.ts"),
+      join(smokeRoot, "packed-consumer-types.ts")
+    ))
+    yield* run(join(smokeRoot, "node_modules", ".bin", "tsc"), [
+      "--noEmit",
+      "--strict",
+      "--target", "ES2023",
+      "--lib", "ES2023,ESNext.Disposable,DOM,DOM.Iterable",
+      "--module", "NodeNext",
+      "--moduleResolution", "NodeNext",
+      "--skipLibCheck", "false",
+      "--verbatimModuleSyntax", "true",
+      join(smokeRoot, "packed-consumer-types.ts")
+    ], { cwd: smokeRoot })
   })
 
 const temporaryDirectory = Effect.acquireRelease(
