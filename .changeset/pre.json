@@ -10,6 +10,7 @@
     "centralize-generation-process",
     "effect4-migration",
     "effect4-rc",
+    "effect4-stable",
     "harden-effect-parser-contract",
     "inject-trace-generation",
     "lossless-cross-platform-traces",
