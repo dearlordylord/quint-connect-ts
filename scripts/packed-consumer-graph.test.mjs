@@ -8,18 +8,18 @@ const packedManifest = {
   version: "2.0.2-effect4.1",
   dependencies: {
     "@firfi/itf-trace-parser": "0.2.0-effect4.1",
-    effect: "4.0.0-rc.112"
+    effect: "4.1.4"
   }
 }
 
 const effect = {
-  path: "/consumer/node_modules/.pnpm/effect@4.0.0-rc.112/node_modules/effect",
-  version: "4.0.0-rc.112"
+  path: "/consumer/node_modules/.pnpm/effect@4.1.4/node_modules/effect",
+  version: "4.1.4"
 }
 
 const parser = {
   dependencies: { effect },
-  path: "/consumer/node_modules/.pnpm/@firfi+itf-trace-parser@0.2.0-effect4.1_effect@4.0.0-rc.112/node_modules/@firfi/itf-trace-parser",
+  path: "/consumer/node_modules/.pnpm/@firfi+itf-trace-parser@0.2.0-effect4.1_effect@4.1.4/node_modules/@firfi/itf-trace-parser",
   version: "0.2.0-effect4.1"
 }
 
@@ -58,8 +58,8 @@ test("rejects a parser peer that resolves to a different Effect runtime", () => 
     dependencies: {
       effect: {
         ...effect,
-        path: "/consumer/node_modules/.pnpm/effect@4.0.0-rc.111/node_modules/effect",
-        version: "4.0.0-rc.111"
+        path: "/consumer/node_modules/.pnpm/effect@4.1.3/node_modules/effect",
+        version: "4.1.3"
       }
     }
   }

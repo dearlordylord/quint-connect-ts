@@ -14,7 +14,7 @@ The publish checks are split by the boundary they protect. This keeps ordinary f
 - installs the tarball with pnpm's prefer-offline mode in a fresh temporary project;
 - imports the default, Effect, Vitest, and Vitest Simple entrypoints without Zod installed;
 - verifies the installed manifest has the expected package version and exact parser dependency;
-- runs a huge integer through one real trace and state check via the explicit local `quintBin` and Effect `4.0.0-rc.112`;
+- runs a huge integer through one real trace and state check via the explicit local `quintBin` and Effect `4.1.4`;
 - locates the installed packed `@firfi/quint-connect` node and audits its direct parser/Effect edges, proving the published parser peer resolves to that same single exact Effect runtime without a peer override;
 - executes the packed `intent` bin and verifies its expected missing-optional-tool diagnostic;
 - installs Zod only after the Effect-only check, then runs the default/simple API through a real Zod-decoded trace;

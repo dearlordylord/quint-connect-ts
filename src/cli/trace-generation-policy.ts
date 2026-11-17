@@ -44,7 +44,7 @@ type CompiledEvaluatorPolicy = RunTraceGenerationPolicy & {
 // or compiled evaluator starts, while an explicit API option remains authoritative.
 // Compare upstream command construction:
 // https://github.com/informalsystems/quint-connect/blob/4f018f54fc7dd4cef341d10111427bab59d3b307/connect/src/trace/generator/run.rs#L27-L52
-const BackendEnvironment = Config.literals(["typescript", "rust"], "QUINT_BACKEND").pipe(
+const BackendEnvironment = Config.Literals(["typescript", "rust"], "QUINT_BACKEND").pipe(
   Config.withDefault("typescript")
 )
 
