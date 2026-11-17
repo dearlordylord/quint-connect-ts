@@ -1,9 +1,12 @@
 import assert from "node:assert/strict"
+import { readFile } from "node:fs/promises"
 
 const effect = await import("effect")
 const environment = effect.Schema.decodeUnknownSync(effect.Schema.Struct({
   PACKED_CONSUMER_QUINT_BIN: effect.Schema.String,
-  PACKED_CONSUMER_SPEC: effect.Schema.String
+  PACKED_CONSUMER_SPEC: effect.Schema.String,
+  PACKED_CONSUMER_PACKAGE_VERSION: effect.Schema.String,
+  PACKED_CONSUMER_PARSER_VERSION: effect.Schema.String
 }))(process.env)
 
 await assert.rejects(
@@ -35,6 +38,15 @@ assert.equal(typeof effectApi.quintRun, "function")
 assert.equal(typeof vitestApi.quintIt, "function")
 assert.equal(typeof vitestSimpleApi.quintTest, "function")
 
+const installedManifest = effect.Schema.decodeUnknownSync(effect.Schema.parseJson(effect.Schema.Struct({
+  version: effect.Schema.String,
+  dependencies: effect.Schema.Struct({ "@firfi/itf-trace-parser": effect.Schema.String })
+})))(await readFile(new URL("../package.json", import.meta.resolve("@firfi/quint-connect")), "utf8"))
+assert.equal(installedManifest.version, environment.PACKED_CONSUMER_PACKAGE_VERSION)
+assert.equal(installedManifest.dependencies["@firfi/itf-trace-parser"], environment.PACKED_CONSUMER_PARSER_VERSION)
+
+const expectedAmount = 900719925474099312345678901234567890n
+const amounts = []
 let count = 0n
 const result = await effect.Effect.runPromise(effectApi.quintRun({
   spec: environment.PACKED_CONSUMER_SPEC,
@@ -44,10 +56,11 @@ const result = await effect.Effect.runPromise(effectApi.quintRun({
   seed: "1",
   quintBin: environment.PACKED_CONSUMER_QUINT_BIN,
   driverFactory: effectApi.defineDriver(
-    { init: {}, Increment: { amount: effectApi.ITFBigInt } },
+    { init: {}, AddHuge: { amount: effectApi.ITFBigInt } },
     () => ({
       init: () => effect.Effect.void,
-      Increment: ({ amount }) => effect.Effect.sync(() => {
+      AddHuge: ({ amount }) => effect.Effect.sync(() => {
+        amounts.push(amount)
         count += amount
       }),
       getState: () => effect.Effect.succeed({ count })
@@ -63,3 +76,6 @@ const result = await effect.Effect.runPromise(effectApi.quintRun({
 
 assert.equal(result.seed, "1")
 assert.ok(result.tracesReplayed > 0)
+
+assert.ok(amounts.length > 0)
+assert.ok(amounts.every((amount) => amount === expectedAmount))

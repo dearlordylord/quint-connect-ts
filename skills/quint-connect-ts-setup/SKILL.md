@@ -11,7 +11,7 @@ description: >
   state checking.
 type: core
 library: quint-connect-ts
-library_version: "0.6.0 (Effect 3, @latest) / 1.0.0-effect4 (Effect 4, @effect4)"
+library_version: "Effect 3 (@latest) / Effect 4 (@effect4)"
 sources:
   - "dearlordylord/quint-connect-ts:README.md"
   - "dearlordylord/quint-connect-ts:src/simple.ts"
@@ -44,17 +44,7 @@ Two npm dist-tags are published:
 
 **You must match the installed version to the project's Effect major.** Installing the wrong one causes peer dependency conflicts and runtime errors.
 
-Key Effect API differences between the two versions (internals only — the quint-connect user-facing API is the same):
-
-| Effect 3 (`@latest`) | Effect 4 (`@effect4`) |
-|---|---|
-| `Schema.TaggedError` | `Schema.TaggedErrorClass` |
-| `Schema.decodeUnknown(S)(value)` | `Schema.decodeUnknownEffect(S)(value)` |
-| `Schema.optionalWith(S, { default: () => v })` | `Schema.optional(S).pipe(Schema.withDecodingDefault(() => v))` |
-| `@effect/platform-node` separate package | Platform merged into `effect` |
-| `Effect.provide(NodeContext.layer)` | `Effect.provide(NodeContext.layer)` (same) |
-
-For the Effect API examples in this skill, the code shown uses Effect 3 syntax. If targeting Effect 4, adjust the Schema/Effect calls per the table above.
+The examples below target Effect 3 (`latest`). For Effect 4, follow the README and setup skill shipped with the `effect4` package; that line requires an exact Effect runtime version.
 
 ## Setup -- Simple API (recommended default)
 
@@ -82,7 +72,7 @@ Complete test file:
 
 ```ts
 import * as path from "node:path"
-import { describe } from "vitest"
+import { describe, test } from "vitest"
 import { z } from "zod"
 import { defineDriver, stateCheck } from "@firfi/quint-connect"
 import { ITFBigInt } from "@firfi/quint-connect/zod"
@@ -105,7 +95,7 @@ const counterDriver = defineDriver(
 )
 
 describe("Counter MBT", () => {
-  quintTest("replays traces", {
+  quintTest(test, "replays traces", {
     spec: path.join(import.meta.dirname, "specs", "counter.qnt"),
     driver: counterDriver,
     stateCheck: stateCheck(
@@ -119,14 +109,14 @@ describe("Counter MBT", () => {
 ## Setup -- Effect API
 
 ```bash
-pnpm add -D @firfi/quint-connect effect @effect/platform-node
+pnpm add -D @firfi/quint-connect@latest effect@^3
 # For Effect vitest helper:
-pnpm add -D @effect/vitest
+pnpm add -D @effect/vitest@0.27.0 vitest@4.0.18
 ```
 
 ```ts
 import { Effect, Schema } from "effect"
-import { NodeContext } from "@effect/platform-node"
+import { it } from "@effect/vitest"
 import * as path from "node:path"
 import { describe } from "vitest"
 import { defineDriver, ITFBigInt, stateCheck } from "@firfi/quint-connect/effect"
@@ -148,7 +138,7 @@ const counterDriver = defineDriver(
 )
 
 describe("Counter MBT (Effect)", () => {
-  quintIt("replays traces", {
+  quintIt(it.effect, "replays traces", {
     spec: path.join(import.meta.dirname, "specs", "counter.qnt"),
     driverFactory: counterDriver,
     stateCheck: stateCheck(
@@ -323,38 +313,24 @@ The simple API (`@firfi/quint-connect`) uses Standard Schema (Zod, Valibot). The
 
 Source: package.json exports
 
-### HIGH Forget Effect.provide(NodeContext.layer)
+### Runtime services
 
-Wrong:
+`quintRun` manages its own Node.js services and scoped resources. Call `Effect.runPromise(quintRun(opts))` directly; consumers need no separate `@effect/platform-node` dependency or `NodeContext.layer`.
 
-```ts
-const result = await Effect.runPromise(quintRun(opts))
-```
-
-Correct:
-
-```ts
-const result = await Effect.runPromise(
-  quintRun(opts).pipe(Effect.provide(NodeContext.layer))
-)
-```
-
-The Effect API requires `@effect/platform-node` services for filesystem access and subprocess spawning. Without `NodeContext.layer`, you get a cryptic missing-service error at runtime.
-
-Source: README.md, src/cli/quint.ts
+Source: README.md, src/runner/runner.ts
 
 ### HIGH Destructure traces or state from quintRun result
 
 Wrong:
 
 ```ts
-const { traces, states } = await Effect.runPromise(quintRun(opts).pipe(...))
+const { traces, states } = await Effect.runPromise(quintRun(opts))
 ```
 
 Correct:
 
 ```ts
-const { tracesReplayed, seed } = await Effect.runPromise(quintRun(opts).pipe(...))
+const { tracesReplayed, seed } = await Effect.runPromise(quintRun(opts))
 ```
 
 `quintRun` returns `{ tracesReplayed: number, seed: string }`, not traces or state data.

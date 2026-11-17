@@ -118,7 +118,7 @@
     "@changesets/cli": "^2.30.0",
     "@effect/eslint-plugin": "^0.3.2",
     "@effect/language-service": "^0.73.1",
-    "@effect/vitest": "latest",
+    "@effect/vitest": "0.27.0",
     "@eslint/compat": "^2.0.2",
     "@informalsystems/quint": "0.32.0",
     "@tanstack/intent": "^0.0.14",
@@ -139,7 +139,7 @@
     "madge": "^8.0.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.54.0",
-    "vitest": "latest",
+    "vitest": "4.0.18",
     "zod": "^4.3.6"
   },
   "bin": {

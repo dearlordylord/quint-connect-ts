@@ -25,10 +25,10 @@ pnpm add @firfi/quint-connect
 pnpm add zod
 
 # For Effect API:
-pnpm add @firfi/quint-connect effect
+pnpm add @firfi/quint-connect effect@^3
 
 # For Effect vitest helper (quintIt):
-pnpm add -D @effect/vitest
+pnpm add -D @effect/vitest@0.27.0 vitest@4.0.18
 ```
 
 **Requirements:** Node.js 22+ (for lossless evaluator JSON decoding), ESM (`"type": "module"` in package.json), [Quint CLI](https://github.com/informalsystems/quint) (`npx @informalsystems/quint` runs without global install). The package targets Effect 3 (`effect@^3.0.0`); existing run-mode calls remain source-compatible when `generation` is omitted.
